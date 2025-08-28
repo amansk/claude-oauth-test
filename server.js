@@ -85,13 +85,34 @@ app.get('/.well-known/mcp_oauth', (req, res) => {
     // Force HTTPS for production URLs
     const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
     const baseUrl = protocol + '://' + req.get('host');
-    console.log('🔍 OAuth discovery requested from:', req.ip);
+    console.log('🔍 MCP OAuth discovery requested from:', req.ip);
     
     res.json({
         authorization_endpoint: `${baseUrl}/oauth/authorize`,
         token_endpoint: `${baseUrl}/oauth/token`,
+        device_authorization_endpoint: `${baseUrl}/oauth/device`,
         supported_response_types: ['code'],
-        grant_types_supported: ['authorization_code']
+        grant_types_supported: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code']
+    });
+});
+
+// Standard OAuth Server Metadata (as per search results)
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+    const baseUrl = protocol + '://' + req.get('host');
+    console.log('🔍 OAuth server metadata discovery requested from:', req.ip);
+    
+    res.json({
+        issuer: baseUrl,
+        authorization_endpoint: `${baseUrl}/oauth/authorize`,
+        token_endpoint: `${baseUrl}/oauth/token`,
+        device_authorization_endpoint: `${baseUrl}/oauth/device`,
+        registration_endpoint: `${baseUrl}/oauth/register`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code'],
+        token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
+        code_challenge_methods_supported: ['S256', 'plain'],
+        scopes_supported: ['read:health_data']
     });
 });
 
@@ -583,18 +604,24 @@ app.get('/sse', async (req, res) => {
     console.log('   User-Agent:', req.headers['user-agent']);
     console.log('   Full URL:', req.url);
     
-    // Check for access token - if missing, return OAuth error (don't redirect)
+    // Check for access token - if missing, return OAuth error with WWW-Authenticate header
     if (!token) {
-        console.log('❌ No token provided - returning OAuth error');
+        console.log('❌ No token provided - returning OAuth error with WWW-Authenticate header');
         
-        // Return proper OAuth error response instead of redirecting
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        
+        // Set WWW-Authenticate header as mentioned in the OAuth specs
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="The access token is missing"`);
+        
+        // Return proper OAuth error response with discovery info
         return res.status(401).json({ 
             error: 'unauthorized',
             error_description: 'No access token provided',
             message: 'OAuth 2.0 authentication required',
-            authorization_endpoint: 'https://claude-oauth-test-production.up.railway.app/oauth/authorize',
-            token_endpoint: 'https://claude-oauth-test-production.up.railway.app/oauth/token',
-            device_authorization_endpoint: 'https://claude-oauth-test-production.up.railway.app/oauth/device'
+            authorization_endpoint: `${baseUrl}/oauth/authorize`,
+            token_endpoint: `${baseUrl}/oauth/token`,
+            device_authorization_endpoint: `${baseUrl}/oauth/device`
         });
     }
     
