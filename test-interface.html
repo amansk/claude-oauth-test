@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Claude Connection - Wellavy</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background: #f8f9fa;
+            line-height: 1.6;
+        }
+        .header {
+            text-align: center;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .test-section {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+            border-left: 5px solid #1976d2;
+        }
+        .input-group {
+            display: flex;
+            gap: 15px;
+            margin: 25px 0;
+            align-items: stretch;
+        }
+        input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 18px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            letter-spacing: 1px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+        }
+        button {
+            padding: 15px 30px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #1565c0;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .status {
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-weight: 600;
+            font-size: 16px;
+            text-align: center;
+        }
+        .success { background: #e8f5e8; color: #2e7d32; border: 2px solid #4caf50; }
+        .error { background: #ffebee; color: #c62828; border: 2px solid #f44336; }
+        .info { background: #e3f2fd; color: #1976d2; border: 2px solid #2196f3; }
+        .warning { background: #fff3e0; color: #f57c00; border: 2px solid #ff9800; }
+        .instructions {
+            background: #f0f7ff;
+            padding: 25px;
+            border-radius: 8px;
+            border-left: 4px solid #1976d2;
+            margin: 20px 0;
+        }
+        .instructions h4 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        .instructions ol {
+            margin: 15px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin: 8px 0;
+        }
+        .debug-info {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 Test Claude Desktop Connection</h1>
+        <p style="color: #666; margin-bottom: 0;">This page simulates the Wellavy interface for testing OAuth flow</p>
+    </div>
+
+    <div class="test-section">
+        <h3 style="color: #1976d2; margin-top: 0;">Connect Claude Desktop to Wellavy</h3>
+        
+        <div class="instructions">
+            <h4>How to test:</h4>
+            <ol>
+                <li>Start the OAuth test server: <code>npm start</code></li>
+                <li>Add <code>http://localhost:3001/sse</code> to Claude Desktop</li>
+                <li>Click "Configure" - browser opens with a code</li>
+                <li>Copy the code and paste it below</li>
+                <li>Click "Connect" to authorize</li>
+            </ol>
+        </div>
+
+        <div class="input-group">
+            <input 
+                id="claude-code" 
+                placeholder="Enter code (e.g., WLVY-1234)" 
+                style="text-transform: uppercase;"
+                maxlength="9"
+            />
+            <button id="connect-btn" onclick="connectClaude()">Connect Claude</button>
+        </div>
+        
+        <div id="claude-status"></div>
+    </div>
+
+    <div class="debug-info">
+        <h4>Debug Information:</h4>
+        <div id="debug-output">
+            <div>Status: Ready</div>
+            <div>Server: Checking...</div>
+            <div>Last attempt: None</div>
+        </div>
+    </div>
+
+    <script>
+        let isConnecting = false;
+        
+        // Auto-format input
+        document.getElementById('claude-code').addEventListener('input', function(e) {
+            let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (value.length > 4) {
+                value = value.substring(0, 4) + '-' + value.substring(4, 8);
+            }
+            e.target.value = value;
+        });
+
+        // Enter key support
+        document.getElementById('claude-code').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !isConnecting) {
+                connectClaude();
+            }
+        });
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('claude-status');
+            statusDiv.innerHTML = message;
+            statusDiv.className = 'status ' + type;
+        }
+
+        function updateDebug(key, value) {
+            const debugOutput = document.getElementById('debug-output');
+            const lines = debugOutput.innerHTML.split('<div>').slice(1);
+            const updates = {};
+            
+            lines.forEach(line => {
+                const cleanLine = line.replace('</div>', '');
+                const [k, ...v] = cleanLine.split(': ');
+                updates[k] = v.join(': ');
+            });
+            
+            updates[key] = value;
+            
+            debugOutput.innerHTML = Object.entries(updates)
+                .map(([k, v]) => `<div>${k}: ${v}</div>`)
+                .join('');
+        }
+
+        async function connectClaude() {
+            if (isConnecting) return;
+            
+            const code = document.getElementById('claude-code').value.trim().toUpperCase();
+            const connectBtn = document.getElementById('connect-btn');
+            
+            if (!code) {
+                showStatus('❌ Please enter a code from Claude', 'error');
+                return;
+            }
+
+            if (!/^WLVY-[A-Z0-9]{4}$/.test(code)) {
+                showStatus('⚠️ Code should be in format WLVY-XXXX', 'warning');
+                return;
+            }
+            
+            isConnecting = true;
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connecting...';
+            
+            showStatus('🔄 Connecting Claude Desktop...', 'info');
+            updateDebug('Status', 'Connecting');
+            updateDebug('Last attempt', new Date().toLocaleTimeString());
+            
+            const testUrls = [
+                'http://localhost:3001/api/authorize-code',
+                'https://claude-oauth-test.railway.app/api/authorize-code'
+            ];
+            
+            async function tryConnect(urls, index = 0) {
+                if (index >= urls.length) {
+                    showStatus('❌ Could not connect to OAuth test server. Make sure it\'s running.', 'error');
+                    updateDebug('Status', 'Failed - server not reachable');
+                    resetButton();
+                    return;
+                }
+                
+                const currentUrl = urls[index];
+                updateDebug('Server', currentUrl);
+                
+                try {
+                    const response = await fetch(currentUrl, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ code })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        showStatus('✅ Claude connected successfully! Return to the authorization page and click "I\'m Connected".', 'success');
+                        updateDebug('Status', 'Connected successfully');
+                        document.getElementById('claude-code').value = '';
+                    } else {
+                        const errorMsg = data.error || 'Unknown error';
+                        if (errorMsg.includes('expired')) {
+                            showStatus('⏰ Code has expired. Please get a new code from Claude.', 'warning');
+                        } else if (errorMsg.includes('Invalid') || errorMsg.includes('not found')) {
+                            showStatus('❌ Invalid code. Please check the code from Claude.', 'error');
+                        } else {
+                            showStatus('⚠️ ' + errorMsg, 'warning');
+                        }
+                        updateDebug('Status', 'Error: ' + errorMsg);
+                    }
+                    
+                    resetButton();
+                    
+                } catch (error) {
+                    console.log(`Failed to connect to ${currentUrl}:`, error.message);
+                    
+                    // Try next URL
+                    if (index < urls.length - 1) {
+                        await tryConnect(urls, index + 1);
+                    } else {
+                        showStatus('❌ OAuth test server not reachable. Please start the server with "npm start".', 'error');
+                        updateDebug('Status', 'Server not reachable');
+                        resetButton();
+                    }
+                }
+            }
+            
+            await tryConnect(testUrls);
+        }
+
+        function resetButton() {
+            isConnecting = false;
+            const connectBtn = document.getElementById('connect-btn');
+            connectBtn.disabled = false;
+            connectBtn.textContent = 'Connect Claude';
+        }
+
+        // Check server status on page load
+        window.addEventListener('load', async () => {
+            const healthUrls = [
+                'http://localhost:3001/health',
+                'https://claude-oauth-test.railway.app/health'
+            ];
+            
+            for (const url of healthUrls) {
+                try {
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const data = await response.json();
+                        updateDebug('Server', url + ' (online)');
+                        updateDebug('Status', 'Ready - server online');
+                        return;
+                    }
+                } catch (error) {
+                    // Continue to next URL
+                }
+            }
+            
+            updateDebug('Server', 'Not found');
+            updateDebug('Status', 'Server offline - please start with "npm start"');
+        });
+    </script>
+</body>
+</html>
