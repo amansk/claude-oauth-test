@@ -218,19 +218,30 @@ app.post('/oauth/register', (req, res) => {
 
 // 3. Authorization Page (Claude opens this in browser)
 app.get('/oauth/authorize', (req, res) => {
-    const { client_id, redirect_uri, state, response_type, scope } = req.query;
+    const { 
+        client_id, 
+        redirect_uri, 
+        state, 
+        response_type, 
+        scope,
+        code_challenge,
+        code_challenge_method 
+    } = req.query;
     
     console.log('🔐 OAuth authorization request:');
     console.log('   client_id:', client_id);
     console.log('   redirect_uri:', redirect_uri);
     console.log('   state:', state);
     console.log('   response_type:', response_type);
+    console.log('   scope:', scope);
+    console.log('   code_challenge:', code_challenge);
+    console.log('   code_challenge_method:', code_challenge_method);
     
     // Generate authorization code for Claude's standard OAuth flow
     const authCode = crypto.randomBytes(32).toString('hex');
     const userCode = generateUserCode(); // For display to user
     
-    // Store authorization with all Claude's parameters
+    // Store authorization with all Claude's parameters including PKCE
     pendingAuthorizations.set(userCode, {
         authCode,
         authorized: false,
@@ -239,6 +250,8 @@ app.get('/oauth/authorize', (req, res) => {
         state: state, // Important: store Claude's state parameter
         responseType: response_type,
         scope: scope,
+        codeChallenge: code_challenge, // PKCE challenge
+        codeChallengeMethod: code_challenge_method, // PKCE method (S256)
         expires: Date.now() + 600000,
         created: new Date().toISOString()
     });
@@ -646,6 +659,7 @@ app.post('/oauth/token', (req, res) => {
     const code = req.body.code;
     const device_code = req.body.device_code;  
     const client_id = req.body.client_id;
+    const code_verifier = req.body.code_verifier; // PKCE verifier
     
     console.log('🎫 Token exchange request:');
     console.log('   Content-Type:', req.headers['content-type']);
@@ -653,6 +667,7 @@ app.post('/oauth/token', (req, res) => {
     console.log('   Grant Type:', grant_type);
     console.log('   Code/Device Code:', (code || device_code)?.substring(0, 10) + '...');
     console.log('   Client ID:', client_id);
+    console.log('   Code Verifier (PKCE):', code_verifier?.substring(0, 20) + '...' || 'None');
     
     if (grant_type === 'authorization_code') {
         // Handle authorization code flow (from redirects)
