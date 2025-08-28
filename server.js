@@ -1006,15 +1006,9 @@ async function handleMcpMessage(message) {
                 result: {
                     protocolVersion: requestedVersion, // Echo back Claude's version
                     capabilities: {
-                        tools: {
-                            listTools: true
-                        },
-                        prompts: {
-                            listPrompts: true
-                        },
-                        resources: {
-                            listResources: true
-                        }
+                        tools: true,
+                        prompts: false,
+                        resources: false
                     },
                     serverInfo: {
                         name: MOCK_MCP_SERVER_INFO.name,
