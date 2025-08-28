@@ -186,6 +186,30 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
     });
 });
 
+// Client Registration endpoint (required by Torch's OAuth spec)
+app.post('/oauth/register', (req, res) => {
+    console.log('🔐 OAuth client registration request');
+    console.log('   Body:', JSON.stringify(req.body, null, 2));
+    
+    const clientId = crypto.randomBytes(16).toString('hex');
+    const clientSecret = crypto.randomBytes(32).toString('hex');
+    
+    console.log('   Generated client_id:', clientId);
+    console.log('   Generated client_secret:', clientSecret.substring(0, 10) + '...');
+    
+    // Return client registration response
+    res.json({
+        client_id: clientId,
+        client_secret: clientSecret,
+        client_id_issued_at: Math.floor(Date.now() / 1000),
+        client_secret_expires_at: 0, // Never expires
+        redirect_uris: req.body.redirect_uris || [],
+        token_endpoint_auth_method: 'client_secret_basic',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code']
+    });
+});
+
 // 3. Authorization Page (Claude opens this in browser)
 app.get('/oauth/authorize', (req, res) => {
     // Check if user_code and auth_code are provided (from device flow)
