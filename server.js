@@ -453,29 +453,64 @@ app.get('/sse', async (req, res) => {
         'Access-Control-Allow-Headers': 'Cache-Control'
     });
     
-    // Send initial connection confirmation
-    res.write('data: {"type":"connection","status":"connected","server":"claude-oauth-test-proxy"}\\n\\n');
+    console.log('📡 SSE connection established - waiting for MCP initialize message');
     
-    console.log('📡 SSE connection established - Claude should now be able to use MCP tools');
+    // Instead of sending initial data, wait for Claude to send MCP messages
+    // Claude expects to initiate the MCP handshake, not receive immediate data
     
-    // For testing, we'll forward to your real MCP server
-    // In a real implementation, you'd maintain the SSE connection and proxy all MCP messages
-    
-    // Keep connection alive with periodic pings
+    // Keep connection alive with periodic pings (but don't send them immediately)
     const pingInterval = setInterval(() => {
         try {
+            // Only send pings after connection has been established for a while
+            // and no real MCP communication is happening
             res.write('data: {"type":"ping","timestamp":"' + new Date().toISOString() + '"}\\n\\n');
         } catch (err) {
-            console.log('📡 SSE connection closed');
+            console.log('📡 SSE connection closed during ping');
             clearInterval(pingInterval);
         }
-    }, 30000);
+    }, 60000); // Longer interval to avoid interfering with MCP protocol
     
     // Clean up on client disconnect
     req.on('close', () => {
         console.log('📡 SSE connection closed by client');
         clearInterval(pingInterval);
     });
+});
+
+// Handle MCP messages via POST to SSE endpoint
+app.post('/sse', async (req, res) => {
+    console.log('📮 POST request to SSE endpoint (MCP message)');
+    console.log('   Body:', JSON.stringify(req.body, null, 2));
+    
+    // This looks like an MCP JSON-RPC message
+    if (req.body && req.body.jsonrpc) {
+        console.log('🔧 Handling MCP JSON-RPC:', req.body.method);
+        
+        // For now, let's proxy this to the real MCP server
+        try {
+            const response = await fetch(`${REAL_MCP_SERVER}/mcp`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${FIXED_API_KEY}`
+                },
+                body: JSON.stringify(req.body)
+            });
+            
+            const data = await response.json();
+            console.log('✅ Proxied to real MCP server:', data);
+            res.json(data);
+        } catch (error) {
+            console.error('❌ MCP proxy error:', error.message);
+            res.status(500).json({ 
+                jsonrpc: '2.0', 
+                error: { code: -32000, message: 'Proxy failed' },
+                id: req.body.id
+            });
+        }
+    } else {
+        res.status(400).json({ error: 'Expected MCP JSON-RPC message' });
+    }
 });
 
 // 8. Proxy MCP requests to real server (for testing)
