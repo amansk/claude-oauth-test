@@ -426,15 +426,27 @@ app.get('/oauth/authorize', (req, res) => {
                         .then(data => {
                             console.log('Check response:', data);
                             if (data.authorized) {
-                                showStatus('✅ Connected successfully! Redirecting Claude...', 'success');
+                                // Show clean success page like Torch
+                                document.body.innerHTML = \`
+                                    <div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #e8e8e8;">
+                                        <div style="background: white; padding: 60px 80px; border-radius: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                            <div style="width: 60px; height: 60px; background: #22c55e; border-radius: 12px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+                                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                            </div>
+                                            <h1 style="font-family: -apple-system, system-ui; font-size: 24px; font-weight: 600; margin: 0 0 10px; color: #1a1a1a;">Authorization Successful</h1>
+                                            <p style="font-family: -apple-system, system-ui; font-size: 16px; color: #666; margin: 0;">Redirecting...</p>
+                                        </div>
+                                    </div>
+                                \`;
                                 setTimeout(() => {
                                     let redirectUrl = data.redirect_uri + '?code=' + data.auth_code;
                                     if (data.state) {
                                         redirectUrl += '&state=' + encodeURIComponent(data.state);
                                     }
-                                    console.log('Redirecting to:', redirectUrl);
                                     window.location.href = redirectUrl;
-                                }, 2000);
+                                }, 1500);
                             } else if (data.expired) {
                                 showStatus('❌ Code has expired. Please refresh and try again.', 'error');
                             } else {
@@ -458,15 +470,27 @@ app.get('/oauth/authorize', (req, res) => {
                         .then(data => {
                             if (data.authorized) {
                                 clearInterval(autoCheckInterval);
-                                showStatus('✅ Auto-detected connection! Redirecting...', 'success');
+                                // Show clean success page like Torch
+                                document.body.innerHTML = \`
+                                    <div style="display: flex; align-items: center; justify-content: center; height: 100vh; background: #e8e8e8;">
+                                        <div style="background: white; padding: 60px 80px; border-radius: 20px; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                            <div style="width: 60px; height: 60px; background: #22c55e; border-radius: 12px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+                                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                            </div>
+                                            <h1 style="font-family: -apple-system, system-ui; font-size: 24px; font-weight: 600; margin: 0 0 10px; color: #1a1a1a;">Authorization Successful</h1>
+                                            <p style="font-family: -apple-system, system-ui; font-size: 16px; color: #666; margin: 0;">Redirecting...</p>
+                                        </div>
+                                    </div>
+                                \`;
                                 setTimeout(() => {
                                     let redirectUrl = data.redirect_uri + '?code=' + data.auth_code;
                                     if (data.state) {
                                         redirectUrl += '&state=' + encodeURIComponent(data.state);
                                     }
-                                    console.log('Auto-check redirecting to:', redirectUrl);
                                     window.location.href = redirectUrl;
-                                }, 2000);
+                                }, 1500);
                             }
                         })
                         .catch(() => {
