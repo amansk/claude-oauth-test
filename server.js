@@ -1001,16 +1001,14 @@ async function handleMcpMessage(message) {
     switch (method) {
         case 'initialize':
             console.log('🔄 MCP Initialize request with params:', JSON.stringify(params, null, 2));
-            // Match Claude's requested protocol version
-            const requestedVersion = params?.protocolVersion || '2025-06-18';
+            // Simplified response like Torch - no protocolVersion
             const initResult = {
                 jsonrpc: '2.0',
                 result: {
-                    protocolVersion: requestedVersion, // Echo back Claude's version
                     capabilities: {
-                        tools: {},  // Empty object means tools are supported
-                        prompts: {},  // Empty object means prompts are supported  
-                        resources: {}  // Empty object means resources are supported
+                        tools: {
+                            listChanged: false  // Match Torch's format exactly
+                        }
                     },
                     serverInfo: {
                         name: MOCK_MCP_SERVER_INFO.name,
