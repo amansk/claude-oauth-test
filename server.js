@@ -434,27 +434,12 @@ app.get('/sse', async (req, res) => {
     console.log('   User-Agent:', req.headers['user-agent']);
     console.log('   Full URL:', req.url);
     
-    // For testing, let's see what Claude is actually sending
+    // TEMP: For debugging, let's allow connection without token to see what Claude sends
     if (!token) {
-        console.log('❌ No token provided, checking if this is Claude Desktop...');
-        
-        // If this looks like Claude Desktop, let's provide OAuth discovery
-        const userAgent = req.headers['user-agent'] || '';
-        if (userAgent.includes('Claude') || userAgent.includes('Anthropic')) {
-            console.log('🔍 Detected Claude client, redirecting to OAuth discovery');
-            return res.redirect('/.well-known/mcp_oauth');
-        }
-        
-        console.log('❌ Invalid or missing token');
-        return res.status(401).json({ 
-            error: 'Invalid or missing access token',
-            hint: 'Try OAuth discovery at /.well-known/mcp_oauth'
-        });
-    }
-    
-    if (token !== FIXED_API_KEY) {
-        console.log('❌ Invalid token');
-        return res.status(401).json({ error: 'Invalid access token' });
+        console.log('⚠️  No token provided - allowing for debugging');
+        console.log('   Will proxy to real MCP server with fixed API key');
+    } else if (token !== FIXED_API_KEY) {
+        console.log('❌ Invalid token, but allowing for debugging');
     }
     
     console.log('✅ SSE connection authorized');
