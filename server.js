@@ -758,7 +758,53 @@ async function handleMcpMessage(message) {
     }
 }
 
-// Additional MCP endpoint (alternative to SSE POST)
+// Alternative MCP endpoint - GET (like Torch)
+app.get('/mcp', async (req, res) => {
+    // Get token from query or header
+    const token = req.query.access_token || 
+                  (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
+    
+    console.log('🔌 MCP GET connection attempt');
+    console.log('   Token provided:', token ? token.substring(0, 20) + '...' : 'None');
+    console.log('   User-Agent:', req.headers['user-agent']);
+    console.log('   Full URL:', req.url);
+    
+    // Check for access token - if missing, return OAuth error with WWW-Authenticate header
+    if (!token) {
+        console.log('❌ No token provided - returning OAuth error with WWW-Authenticate header');
+        
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        
+        // Set WWW-Authenticate header as mentioned in the OAuth specs
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="The access token is missing"`);
+        
+        // Return proper OAuth error response with discovery info
+        return res.status(401).json({ 
+            error: 'unauthorized',
+            error_description: 'No access token provided',
+            message: 'OAuth 2.0 authentication required',
+            authorization_endpoint: `${baseUrl}/oauth/authorize`,
+            token_endpoint: `${baseUrl}/oauth/token`,
+            device_authorization_endpoint: `${baseUrl}/oauth/device`
+        });
+    }
+    
+    if (token !== FIXED_API_KEY) {
+        console.log('❌ Invalid token');
+        return res.status(401).json({ error: 'Invalid access token' });
+    }
+    
+    // For GET requests, return server info (like Torch might do)
+    res.json({
+        name: MOCK_MCP_SERVER_INFO.name,
+        version: MOCK_MCP_SERVER_INFO.version,
+        status: 'ready',
+        message: 'MCP server ready for JSON-RPC calls via POST'
+    });
+});
+
+// MCP endpoint - POST (handles JSON-RPC)
 app.post('/mcp', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     
