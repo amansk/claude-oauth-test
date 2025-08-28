@@ -833,6 +833,47 @@ app.post('/oauth/token', (req, res) => {
     }
 });
 
+// Token revocation endpoint
+app.post('/oauth/revoke', (req, res) => {
+    const token = req.body.token;
+    const token_type_hint = req.body.token_type_hint;
+    
+    console.log('🔄 Token revocation request');
+    console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
+    console.log('   Type hint:', token_type_hint);
+    
+    if (token) {
+        // Find and remove the token
+        let revoked = false;
+        
+        // Check if it's an access token
+        if (activeTokens.has(token)) {
+            activeTokens.delete(token);
+            revoked = true;
+            console.log('✅ Access token revoked');
+        }
+        
+        // Check if it's a refresh token
+        if (!revoked) {
+            for (const [accessToken, tokenData] of activeTokens.entries()) {
+                if (tokenData.refresh_token === token) {
+                    activeTokens.delete(accessToken);
+                    revoked = true;
+                    console.log('✅ Refresh token revoked (and associated access token)');
+                    break;
+                }
+            }
+        }
+        
+        if (!revoked) {
+            console.log('⚠️ Token not found in active tokens');
+        }
+    }
+    
+    // Always return 200 OK per RFC 7009
+    res.status(200).end();
+});
+
 // 7. SSE Endpoint (Claude connects here for MCP communication)
 app.get('/sse', async (req, res) => {
     // Get token from query or header
