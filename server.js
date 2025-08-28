@@ -523,12 +523,25 @@ app.post('/api/authorize-code', (req, res) => {
     auth.authorizedAt = new Date().toISOString();
     
     console.log('✅ Code authorized successfully:', code);
-    console.log('   Will redirect Claude to:', auth.redirectUri);
+    console.log('   Redirecting Claude to:', auth.redirectUri);
+    console.log('   Authorization code:', auth.authCode);
+    console.log('   State parameter:', auth.state);
+    
+    // Build redirect URL with authorization code and state
+    const redirectUrl = new URL(auth.redirectUri);
+    redirectUrl.searchParams.append('code', auth.authCode);
+    if (auth.state) {
+        redirectUrl.searchParams.append('state', auth.state);
+    }
+    
+    console.log('   Full redirect URL:', redirectUrl.toString());
     
     res.json({ 
         success: true,
         message: 'Successfully connected Claude Desktop to Wellavy',
-        code: code
+        code: code,
+        redirect_url: redirectUrl.toString(),
+        note: 'Claude should now be redirected automatically'
     });
 });
 
