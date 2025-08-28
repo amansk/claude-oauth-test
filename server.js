@@ -3,7 +3,14 @@ const cors = require('cors');
 const crypto = require('crypto');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    exposedHeaders: ['WWW-Authenticate'],
+    maxAge: 86400
+}));
 app.use(express.json());
 
 // In-memory storage (resets on server restart)
@@ -614,14 +621,10 @@ app.get('/sse', async (req, res) => {
         // Set WWW-Authenticate header as mentioned in the OAuth specs
         res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="The access token is missing"`);
         
-        // Return proper OAuth error response with discovery info
+        // Return simple OAuth error response (like Torch)
         return res.status(401).json({ 
-            error: 'unauthorized',
-            error_description: 'No access token provided',
-            message: 'OAuth 2.0 authentication required',
-            authorization_endpoint: `${baseUrl}/oauth/authorize`,
-            token_endpoint: `${baseUrl}/oauth/token`,
-            device_authorization_endpoint: `${baseUrl}/oauth/device`
+            error: 'invalid_token',
+            error_description: 'Missing or invalid bearer token'
         });
     }
     
@@ -779,14 +782,10 @@ app.get('/mcp', async (req, res) => {
         // Set WWW-Authenticate header as mentioned in the OAuth specs
         res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="The access token is missing"`);
         
-        // Return proper OAuth error response with discovery info
+        // Return simple OAuth error response (like Torch)
         return res.status(401).json({ 
-            error: 'unauthorized',
-            error_description: 'No access token provided',
-            message: 'OAuth 2.0 authentication required',
-            authorization_endpoint: `${baseUrl}/oauth/authorize`,
-            token_endpoint: `${baseUrl}/oauth/token`,
-            device_authorization_endpoint: `${baseUrl}/oauth/device`
+            error: 'invalid_token',
+            error_description: 'Missing or invalid bearer token'
         });
     }
     
