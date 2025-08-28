@@ -1140,11 +1140,9 @@ app.get('/mcp', async (req, res) => {
     
     console.log('✅ Valid token for GET request');
     
-    // Return tools directly in GET response
-    // Claude Desktop seems to use this instead of calling tools/list
-    res.json({
-        tools: MOCK_TOOLS
-    });
+    // Return empty success response for GET
+    // This might signal Claude Desktop to proceed with tools/list
+    res.json({});
 });
 
 // MCP endpoint - POST (handles JSON-RPC)
