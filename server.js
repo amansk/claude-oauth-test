@@ -442,7 +442,11 @@ app.get('/oauth/authorize', (req, res) => {
                                 clearInterval(autoCheckInterval);
                                 showStatus('✅ Auto-detected connection! Redirecting...', 'success');
                                 setTimeout(() => {
-                                    const redirectUrl = data.redirect_uri + '?code=' + data.auth_code;
+                                    let redirectUrl = data.redirect_uri + '?code=' + data.auth_code;
+                                    if (data.state) {
+                                        redirectUrl += '&state=' + encodeURIComponent(data.state);
+                                    }
+                                    console.log('Auto-check redirecting to:', redirectUrl);
                                     window.location.href = redirectUrl;
                                 }, 2000);
                             }
