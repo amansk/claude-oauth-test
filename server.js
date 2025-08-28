@@ -841,26 +841,37 @@ async function handleMcpMessage(message) {
     
     switch (method) {
         case 'initialize':
-            return {
+            console.log('🔄 MCP Initialize request with params:', JSON.stringify(params, null, 2));
+            const initResult = {
                 jsonrpc: '2.0',
                 result: {
                     protocolVersion: '2024-11-05',
                     capabilities: {
-                        tools: {}
+                        tools: {
+                            listChanged: false
+                        }
                     },
-                    serverInfo: MOCK_MCP_SERVER_INFO
+                    serverInfo: {
+                        name: MOCK_MCP_SERVER_INFO.name,
+                        version: MOCK_MCP_SERVER_INFO.version
+                    }
                 },
                 id
             };
+            console.log('📤 MCP Initialize response:', JSON.stringify(initResult, null, 2));
+            return initResult;
             
         case 'tools/list':
-            return {
+            console.log('🛠️  Tools list requested');
+            const toolsResult = {
                 jsonrpc: '2.0',
                 result: {
                     tools: MOCK_TOOLS
                 },
                 id
             };
+            console.log('📤 Tools list response:', JSON.stringify(toolsResult, null, 2));
+            return toolsResult;
             
         case 'tools/call':
             const toolName = params?.name;
