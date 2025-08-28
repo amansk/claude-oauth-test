@@ -166,7 +166,7 @@ app.get('/.well-known/mcp_oauth', (req, res) => {
     });
 });
 
-// Standard OAuth Server Metadata (as per search results)
+// Standard OAuth Server Metadata (match Torch exactly)
 app.get('/.well-known/oauth-authorization-server', (req, res) => {
     const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
     const baseUrl = protocol + '://' + req.get('host');
@@ -176,13 +176,13 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
         issuer: baseUrl,
         authorization_endpoint: `${baseUrl}/oauth/authorize`,
         token_endpoint: `${baseUrl}/oauth/token`,
-        device_authorization_endpoint: `${baseUrl}/oauth/device`,
         registration_endpoint: `${baseUrl}/oauth/register`,
         response_types_supported: ['code'],
-        grant_types_supported: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code'],
-        token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
-        code_challenge_methods_supported: ['S256', 'plain'],
-        scopes_supported: ['read:health_data']
+        response_modes_supported: ['query'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
+        revocation_endpoint: `${baseUrl}/oauth/token`,
+        code_challenge_methods_supported: ['plain', 'S256']
     });
 });
 
@@ -682,7 +682,7 @@ app.get('/sse', async (req, res) => {
         const baseUrl = protocol + '://' + req.get('host');
         
         // Set WWW-Authenticate header as mentioned in the OAuth specs
-        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="The access token is missing"`);
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Missing or invalid bearer token"`);
         
         // Return simple OAuth error response (like Torch)
         return res.status(401).json({ 
@@ -843,7 +843,7 @@ app.get('/mcp', async (req, res) => {
         const baseUrl = protocol + '://' + req.get('host');
         
         // Set WWW-Authenticate header as mentioned in the OAuth specs
-        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="The access token is missing"`);
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Missing or invalid bearer token"`);
         
         // Return simple OAuth error response (like Torch)
         return res.status(401).json({ 
