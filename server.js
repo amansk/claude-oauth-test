@@ -18,6 +18,10 @@ app.use(express.urlencoded({ extended: true })); // Add form data parsing
 const pendingAuthorizations = new Map();
 const FIXED_API_KEY = 'htr_sk_02df8a9c3ab7e5009e55c223925a836c';
 
+// Store active tokens with their associated data
+// Map: access_token -> { client_id, expires_at, refresh_token, issued_at }
+const activeTokens = new Map();
+
 // Mock MCP Server - completely standalone
 const MOCK_MCP_SERVER_INFO = {
     name: "Wellavy Test MCP Server",
@@ -713,11 +717,28 @@ app.post('/oauth/token', (req, res) => {
         console.log('✅ Authorization code exchange successful for:', foundUserCode);
         pendingAuthorizations.delete(foundUserCode);
         
+        // Generate a unique access token
+        const accessToken = 'tok_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        const refreshToken = 'ref_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        const expiresIn = 604800; // 7 days in seconds
+        
+        // Store the token
+        activeTokens.set(accessToken, {
+            client_id: client_id || 'example-client-id',
+            expires_at: Date.now() + (expiresIn * 1000),
+            refresh_token: refreshToken,
+            issued_at: Date.now()
+        });
+        
+        console.log('🎫 Generated new token:', accessToken.substring(0, 20) + '...');
+        console.log('   Expires in:', expiresIn, 'seconds');
+        
         return res.json({
-            access_token: FIXED_API_KEY,
+            access_token: accessToken,
+            refresh_token: refreshToken,
             token_type: 'Bearer',
-            expires_in: 3600,
-            scope: 'read:health_data'
+            expires_in: expiresIn,
+            scope: 'claudeai'
         });
     } 
     else if (grant_type === 'urn:ietf:params:oauth:grant-type:device_code') {
@@ -758,6 +779,54 @@ app.post('/oauth/token', (req, res) => {
             scope: foundAuth.scope || 'read:health_data'
         });
     }
+    else if (grant_type === 'refresh_token') {
+        // Handle refresh token flow
+        const refresh_token = req.body.refresh_token;
+        
+        console.log('🔄 Refresh token request');
+        
+        // Find the token associated with this refresh token
+        let foundToken = null;
+        let foundAccessToken = null;
+        for (const [accessToken, tokenData] of activeTokens.entries()) {
+            if (tokenData.refresh_token === refresh_token) {
+                foundToken = tokenData;
+                foundAccessToken = accessToken;
+                break;
+            }
+        }
+        
+        if (!foundToken) {
+            console.log('❌ Invalid refresh token');
+            return res.status(400).json({ error: 'invalid_grant' });
+        }
+        
+        // Remove old token
+        activeTokens.delete(foundAccessToken);
+        
+        // Generate new tokens
+        const newAccessToken = 'tok_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        const newRefreshToken = 'ref_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        const expiresIn = 604800; // 7 days
+        
+        // Store new token
+        activeTokens.set(newAccessToken, {
+            client_id: foundToken.client_id,
+            expires_at: Date.now() + (expiresIn * 1000),
+            refresh_token: newRefreshToken,
+            issued_at: Date.now()
+        });
+        
+        console.log('✅ Token refreshed successfully');
+        
+        return res.json({
+            access_token: newAccessToken,
+            refresh_token: newRefreshToken,
+            token_type: 'Bearer',
+            expires_in: expiresIn,
+            scope: 'claudeai'
+        });
+    }
     else {
         console.log('❌ Unsupported grant type:', grant_type);
         return res.status(400).json({ error: 'unsupported_grant_type' });
@@ -792,9 +861,17 @@ app.get('/sse', async (req, res) => {
         });
     }
     
-    if (token !== FIXED_API_KEY) {
+    // Check if token is valid
+    const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
+    if (!isValidToken) {
         console.log('❌ Invalid token');
-        return res.status(401).json({ error: 'Invalid access token' });
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Invalid bearer token"`);
+        return res.status(401).json({ 
+            error: 'invalid_token',
+            error_description: 'Invalid bearer token'
+        });
     }
     
     console.log('✅ SSE connection authorized');
@@ -976,10 +1053,20 @@ app.get('/mcp', async (req, res) => {
         });
     }
     
-    if (token !== FIXED_API_KEY) {
+    // Check if token is valid (either fixed API key or OAuth token)
+    const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
+    if (!isValidToken) {
         console.log('❌ Invalid token');
-        return res.status(401).json({ error: 'Invalid access token' });
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Invalid bearer token"`);
+        return res.status(401).json({ 
+            error: 'invalid_token',
+            error_description: 'Invalid bearer token'
+        });
     }
+    
+    console.log('✅ Valid token for GET request');
     
     // For GET requests, return server info (like Torch might do)
     res.json({
@@ -998,13 +1085,29 @@ app.post('/mcp', async (req, res) => {
     console.log('   Method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
     
-    if (!token || token !== FIXED_API_KEY) {
+    // Check if token exists
+    if (!token) {
+        console.log('❌ No token provided');
         return res.status(401).json({
             jsonrpc: '2.0',
-            error: { code: -32001, message: 'Unauthorized' },
+            error: { code: -32001, message: 'Unauthorized - no token' },
             id: req.body?.id || null
         });
     }
+    
+    // Check if token is valid (either fixed API key or OAuth token)
+    const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
+    if (!isValidToken) {
+        console.log('❌ Invalid token:', token.substring(0, 20) + '...');
+        console.log('   Active tokens:', Array.from(activeTokens.keys()).map(t => t.substring(0, 20) + '...'));
+        return res.status(401).json({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Unauthorized - invalid token' },
+            id: req.body?.id || null
+        });
+    }
+    
+    console.log('✅ Valid token accepted');
     
     // Handle MCP JSON-RPC messages
     if (req.body && req.body.jsonrpc === '2.0') {
