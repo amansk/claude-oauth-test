@@ -888,9 +888,9 @@ async function handleMcpMessage(message) {
                 result: {
                     protocolVersion: requestedVersion, // Echo back Claude's version
                     capabilities: {
-                        tools: {
-                            listChanged: false
-                        }
+                        tools: {},  // Simplified - just indicate we support tools
+                        prompts: {},
+                        resources: {}
                     },
                     serverInfo: {
                         name: MOCK_MCP_SERVER_INFO.name,
