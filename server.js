@@ -991,6 +991,26 @@ async function handleMcpMessage(message) {
             console.log('📤 Tools list response:', JSON.stringify(toolsResult, null, 2));
             return toolsResult;
             
+        case 'prompts/list':
+            console.log('📝 Prompts list requested');
+            return {
+                jsonrpc: '2.0',
+                result: {
+                    prompts: [] // No prompts for now
+                },
+                id
+            };
+            
+        case 'resources/list':
+            console.log('📚 Resources list requested');
+            return {
+                jsonrpc: '2.0',
+                result: {
+                    resources: [] // No resources for now
+                },
+                id
+            };
+            
         case 'tools/call':
             const toolName = params?.name;
             const toolArgs = params?.arguments || {};
