@@ -842,10 +842,12 @@ async function handleMcpMessage(message) {
     switch (method) {
         case 'initialize':
             console.log('🔄 MCP Initialize request with params:', JSON.stringify(params, null, 2));
+            // Match Claude's requested protocol version
+            const requestedVersion = params?.protocolVersion || '2025-06-18';
             const initResult = {
                 jsonrpc: '2.0',
                 result: {
-                    protocolVersion: '2024-11-05',
+                    protocolVersion: requestedVersion, // Echo back Claude's version
                     capabilities: {
                         tools: {
                             listChanged: false
