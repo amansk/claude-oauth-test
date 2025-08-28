@@ -62,19 +62,82 @@ function cleanupExpiredCodes() {
 // Clean up expired codes every minute
 setInterval(cleanupExpiredCodes, 60000);
 
-// 1. Root endpoint with OAuth info
+// 1. Root endpoint - redirect to /mcp (like how some MCP servers work)
 app.get('/', (req, res) => {
+    // Get token from query or header
+    const token = req.query.access_token || 
+                  (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
+    
+    console.log('🔌 MCP connection attempt to root /');
+    console.log('   Token provided:', token ? token.substring(0, 20) + '...' : 'None');
+    console.log('   User-Agent:', req.headers['user-agent']);
+    
+    // Check for access token - if missing, return OAuth error with WWW-Authenticate header
+    if (!token) {
+        console.log('❌ No token provided at root - returning OAuth error with WWW-Authenticate header');
+        
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        
+        // Set WWW-Authenticate header as mentioned in the OAuth specs
+        res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Missing or invalid bearer token"`);
+        
+        // Return simple OAuth error response (like Torch)
+        return res.status(401).json({ 
+            error: 'invalid_token',
+            error_description: 'Missing or invalid bearer token'
+        });
+    }
+    
+    if (token !== FIXED_API_KEY) {
+        console.log('❌ Invalid token at root');
+        return res.status(401).json({ 
+            error: 'invalid_token',
+            error_description: 'Missing or invalid bearer token'
+        });
+    }
+    
+    // For GET requests with valid token, return server info
     res.json({
-        name: 'Claude OAuth Test Proxy',
-        version: '1.0.0',
-        endpoints: {
-            sse: '/sse (requires access_token)',
-            oauth_discovery: '/.well-known/mcp_oauth',
-            authorize: '/oauth/authorize',
-            token: '/oauth/token'
-        },
-        instructions: 'Add this URL to Claude Desktop: /sse'
+        name: MOCK_MCP_SERVER_INFO.name,
+        version: MOCK_MCP_SERVER_INFO.version,
+        status: 'ready',
+        message: 'MCP server ready for JSON-RPC calls via POST'
     });
+});
+
+// Root endpoint - POST (handles JSON-RPC at root)
+app.post('/', async (req, res) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    console.log('📮 MCP JSON-RPC message to root / endpoint');
+    console.log('   Method:', req.body?.method);
+    console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
+    
+    if (!token || token !== FIXED_API_KEY) {
+        return res.status(401).json({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Unauthorized' },
+            id: req.body?.id || null
+        });
+    }
+    
+    // Handle MCP JSON-RPC messages
+    if (req.body && req.body.jsonrpc === '2.0') {
+        try {
+            const response = await handleMcpMessage(req.body);
+            res.json(response);
+        } catch (error) {
+            console.error('❌ MCP error at root:', error.message);
+            res.json({
+                jsonrpc: '2.0',
+                error: { code: -32000, message: error.message },
+                id: req.body.id || null
+            });
+        }
+    } else {
+        res.status(400).json({ error: 'Expected MCP JSON-RPC 2.0 message' });
+    }
 });
 
 // 2. Health check
