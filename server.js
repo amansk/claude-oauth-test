@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
 const crypto = require('crypto');
 
 const app = express();
@@ -10,11 +9,32 @@ app.use(express.json());
 // In-memory storage (resets on server restart)
 const pendingAuthorizations = new Map();
 const FIXED_API_KEY = 'htr_sk_02df8a9c3ab7e5009e55c223925a836c';
-const REAL_MCP_SERVER = 'https://mcp.wellavy.co';
 
-console.log('🚀 Claude OAuth Test Proxy Starting...');
+// Mock MCP Server - completely standalone
+const MOCK_MCP_SERVER_INFO = {
+    name: "Wellavy Test MCP Server",
+    version: "1.0.0"
+};
+
+const MOCK_TOOLS = [
+    {
+        name: "test_tool",
+        description: "A simple test tool that responds with OK",
+        inputSchema: {
+            type: "object",
+            properties: {
+                message: {
+                    type: "string",
+                    description: "Optional message to include in response"
+                }
+            }
+        }
+    }
+];
+
+console.log('🚀 Claude OAuth Test MCP Server Starting...');
 console.log('📋 Using API Key:', FIXED_API_KEY.substring(0, 20) + '...');
-console.log('🔗 Proxying to:', REAL_MCP_SERVER);
+console.log('🧪 Mock MCP Server with test_tool');
 
 // Generate short user code
 function generateUserCode() {
@@ -472,48 +492,84 @@ app.get('/device', (req, res) => {
     `);
 });
 
-// 7. Token exchange (Claude calls this after redirect)
+// 7. Token exchange (supports both authorization_code and device_code flows)
 app.post('/oauth/token', (req, res) => {
-    const { grant_type, code, client_id, redirect_uri } = req.body;
+    const { grant_type, code, device_code, client_id } = req.body;
     
     console.log('🎫 Token exchange request:');
     console.log('   Grant Type:', grant_type);
-    console.log('   Code:', code?.substring(0, 10) + '...');
+    console.log('   Code/Device Code:', (code || device_code)?.substring(0, 10) + '...');
     console.log('   Client ID:', client_id);
     
-    if (grant_type !== 'authorization_code') {
-        console.log('❌ Invalid grant type:', grant_type);
+    if (grant_type === 'authorization_code') {
+        // Handle authorization code flow (from redirects)
+        let foundAuth = null;
+        let foundUserCode = null;
+        for (const [userCode, auth] of pendingAuthorizations.entries()) {
+            if (auth.authCode === code && auth.authorized) {
+                foundAuth = auth;
+                foundUserCode = userCode;
+                break;
+            }
+        }
+        
+        if (!foundAuth) {
+            console.log('❌ Invalid or unauthorized authorization code');
+            return res.status(400).json({ error: 'invalid_grant' });
+        }
+        
+        console.log('✅ Authorization code exchange successful for:', foundUserCode);
+        pendingAuthorizations.delete(foundUserCode);
+        
+        return res.json({
+            access_token: FIXED_API_KEY,
+            token_type: 'Bearer',
+            expires_in: 3600,
+            scope: 'read:health_data'
+        });
+    } 
+    else if (grant_type === 'urn:ietf:params:oauth:grant-type:device_code') {
+        // Handle device code flow (proper OAuth device flow)
+        let foundAuth = null;
+        let foundUserCode = null;
+        for (const [userCode, auth] of pendingAuthorizations.entries()) {
+            if (auth.deviceCode === device_code) {
+                foundAuth = auth;
+                foundUserCode = userCode;
+                break;
+            }
+        }
+        
+        if (!foundAuth) {
+            console.log('❌ Invalid device code');
+            return res.status(400).json({ error: 'invalid_grant' });
+        }
+        
+        if (!foundAuth.authorized) {
+            console.log('⏳ Device code not yet authorized');
+            return res.status(400).json({ error: 'authorization_pending' });
+        }
+        
+        if (foundAuth.expires < Date.now()) {
+            console.log('⏰ Device code expired');
+            pendingAuthorizations.delete(foundUserCode);
+            return res.status(400).json({ error: 'expired_token' });
+        }
+        
+        console.log('✅ Device code exchange successful for:', foundUserCode);
+        pendingAuthorizations.delete(foundUserCode);
+        
+        return res.json({
+            access_token: FIXED_API_KEY,
+            token_type: 'Bearer',
+            expires_in: 3600,
+            scope: foundAuth.scope || 'read:health_data'
+        });
+    }
+    else {
+        console.log('❌ Unsupported grant type:', grant_type);
         return res.status(400).json({ error: 'unsupported_grant_type' });
     }
-    
-    // Find authorization by auth_code
-    let foundAuth = null;
-    let foundUserCode = null;
-    for (const [userCode, auth] of pendingAuthorizations.entries()) {
-        if (auth.authCode === code && auth.authorized) {
-            foundAuth = auth;
-            foundUserCode = userCode;
-            break;
-        }
-    }
-    
-    if (!foundAuth) {
-        console.log('❌ Invalid or unauthorized code');
-        return res.status(400).json({ error: 'invalid_grant' });
-    }
-    
-    console.log('✅ Token exchange successful for user code:', foundUserCode);
-    console.log('   Returning API key:', FIXED_API_KEY.substring(0, 20) + '...');
-    
-    // Clean up the used authorization
-    pendingAuthorizations.delete(foundUserCode);
-    
-    res.json({
-        access_token: FIXED_API_KEY,
-        token_type: 'Bearer',
-        expires_in: 3600,
-        scope: 'read:health_data'
-    });
 });
 
 // 7. SSE Endpoint (Claude connects here for MCP communication)
@@ -584,65 +640,128 @@ app.get('/sse', async (req, res) => {
 
 // Handle MCP messages via POST to SSE endpoint
 app.post('/sse', async (req, res) => {
-    console.log('📮 POST request to SSE endpoint (MCP message)');
-    console.log('   Body:', JSON.stringify(req.body, null, 2));
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.body.access_token;
     
-    // This looks like an MCP JSON-RPC message
-    if (req.body && req.body.jsonrpc) {
-        console.log('🔧 Handling MCP JSON-RPC:', req.body.method);
-        
-        // For now, let's proxy this to the real MCP server
+    console.log('📮 MCP JSON-RPC message to SSE endpoint');
+    console.log('   Method:', req.body?.method);
+    console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
+    
+    // Check authentication
+    if (!token || token !== FIXED_API_KEY) {
+        return res.status(401).json({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Unauthorized' },
+            id: req.body?.id || null
+        });
+    }
+    
+    // Handle MCP JSON-RPC messages
+    if (req.body && req.body.jsonrpc === '2.0') {
         try {
-            const response = await fetch(`${REAL_MCP_SERVER}/mcp`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${FIXED_API_KEY}`
-                },
-                body: JSON.stringify(req.body)
-            });
-            
-            const data = await response.json();
-            console.log('✅ Proxied to real MCP server:', data);
-            res.json(data);
+            const response = await handleMcpMessage(req.body);
+            res.json(response);
         } catch (error) {
-            console.error('❌ MCP proxy error:', error.message);
-            res.status(500).json({ 
-                jsonrpc: '2.0', 
-                error: { code: -32000, message: 'Proxy failed' },
-                id: req.body.id
+            console.error('❌ MCP error:', error.message);
+            res.json({
+                jsonrpc: '2.0',
+                error: { code: -32000, message: error.message },
+                id: req.body.id || null
             });
         }
     } else {
-        res.status(400).json({ error: 'Expected MCP JSON-RPC message' });
+        res.status(400).json({ error: 'Expected MCP JSON-RPC 2.0 message' });
     }
 });
 
-// 8. Proxy MCP requests to real server (for testing)
+// Mock MCP message handler
+async function handleMcpMessage(message) {
+    const { method, params, id } = message;
+    
+    console.log('🔧 Handling MCP method:', method);
+    
+    switch (method) {
+        case 'initialize':
+            return {
+                jsonrpc: '2.0',
+                result: {
+                    protocolVersion: '2024-11-05',
+                    capabilities: {
+                        tools: {}
+                    },
+                    serverInfo: MOCK_MCP_SERVER_INFO
+                },
+                id
+            };
+            
+        case 'tools/list':
+            return {
+                jsonrpc: '2.0',
+                result: {
+                    tools: MOCK_TOOLS
+                },
+                id
+            };
+            
+        case 'tools/call':
+            const toolName = params?.name;
+            const toolArgs = params?.arguments || {};
+            
+            console.log('🛠️  Tool call:', toolName, 'with args:', toolArgs);
+            
+            if (toolName === 'test_tool') {
+                const message = toolArgs.message || 'Hello from test tool!';
+                return {
+                    jsonrpc: '2.0',
+                    result: {
+                        content: [
+                            {
+                                type: 'text',
+                                text: `✅ OK: ${message}\n\nThis is a mock response from the test MCP server. The OAuth flow worked successfully!`
+                            }
+                        ]
+                    },
+                    id
+                };
+            } else {
+                throw new Error(`Unknown tool: ${toolName}`);
+            }
+            
+        default:
+            throw new Error(`Unsupported method: ${method}`);
+    }
+}
+
+// Additional MCP endpoint (alternative to SSE POST)
 app.post('/mcp', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     
+    console.log('📮 MCP JSON-RPC message to /mcp endpoint');
+    console.log('   Method:', req.body?.method);
+    console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
+    
     if (!token || token !== FIXED_API_KEY) {
-        return res.status(401).json({ error: 'Invalid token' });
+        return res.status(401).json({
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Unauthorized' },
+            id: req.body?.id || null
+        });
     }
     
-    try {
-        console.log('🔄 Proxying MCP request to real server');
-        
-        const response = await fetch(`${REAL_MCP_SERVER}/mcp`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${FIXED_API_KEY}`
-            },
-            body: JSON.stringify(req.body)
-        });
-        
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
-        console.error('❌ Proxy error:', error.message);
-        res.status(500).json({ error: 'Proxy failed', details: error.message });
+    // Handle MCP JSON-RPC messages
+    if (req.body && req.body.jsonrpc === '2.0') {
+        try {
+            const response = await handleMcpMessage(req.body);
+            res.json(response);
+        } catch (error) {
+            console.error('❌ MCP error:', error.message);
+            res.json({
+                jsonrpc: '2.0',
+                error: { code: -32000, message: error.message },
+                id: req.body.id || null
+            });
+        }
+    } else {
+        res.status(400).json({ error: 'Expected MCP JSON-RPC 2.0 message' });
     }
 });
 
