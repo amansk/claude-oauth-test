@@ -1006,9 +1006,7 @@ async function handleMcpMessage(message) {
                 result: {
                     protocolVersion: requestedVersion, // Echo back Claude's version
                     capabilities: {
-                        tools: {
-                            "listChanged": true
-                        },
+                        tools: {}, // Try empty tools capability
                         prompts: {},
                         resources: {}
                     },
