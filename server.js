@@ -1135,11 +1135,12 @@ app.get('/mcp', async (req, res) => {
     
     console.log('✅ Valid token for GET request');
     
-    // For GET requests, return server info (like Torch might do)
+    // For GET requests, return server info with tools
     res.json({
         name: MOCK_MCP_SERVER_INFO.name,
         version: MOCK_MCP_SERVER_INFO.version,
         status: 'ready',
+        tools: MOCK_TOOLS,
         message: 'MCP server ready for JSON-RPC calls via POST'
     });
 });
