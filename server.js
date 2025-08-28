@@ -119,7 +119,9 @@ app.post('/', async (req, res) => {
     console.log('   Method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
     
-    if (!token || token !== FIXED_API_KEY) {
+    // Check if token is valid (either fixed API key or OAuth token)
+    const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
+    if (!token || !isValidToken) {
         return res.status(401).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: 'Unauthorized' },
