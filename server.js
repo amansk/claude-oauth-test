@@ -1022,6 +1022,8 @@ async function handleMcpMessage(message) {
             
         case 'tools/list':
             console.log('🛠️  Tools list requested');
+            console.log('   Request ID:', id);
+            console.log('   Params:', JSON.stringify(params, null, 2));
             const toolsResult = {
                 jsonrpc: '2.0',
                 result: {
@@ -1030,6 +1032,7 @@ async function handleMcpMessage(message) {
                 id
             };
             console.log('📤 Tools list response:', JSON.stringify(toolsResult, null, 2));
+            console.log('   Number of tools:', MOCK_TOOLS.length);
             return toolsResult;
             
         case 'prompts/list':
@@ -1079,6 +1082,7 @@ async function handleMcpMessage(message) {
         case 'notifications/initialized':
             // This is a notification, no response needed
             console.log('✅ MCP client initialized notification received');
+            console.log('   Full notification:', JSON.stringify(message, null, 2));
             return null; // No response for notifications
             
         default:
