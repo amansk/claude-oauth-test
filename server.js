@@ -1104,6 +1104,8 @@ app.post('/mcp', async (req, res) => {
     console.log('📮 MCP JSON-RPC message to /mcp endpoint');
     console.log('   Method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
+    console.log('   Full request body:', JSON.stringify(req.body, null, 2));
+    console.log('   Headers:', JSON.stringify(req.headers, null, 2));
     
     // Check if token exists
     if (!token) {
@@ -1165,6 +1167,17 @@ app.get('/debug/pending', (req, res) => {
         server: 'claude-oauth-test-proxy',
         pendingAuthorizations: pending,
         totalPending: pending.length
+    });
+});
+
+// Debug endpoint to check server state
+app.get('/api/debug', (req, res) => {
+    res.json({
+        status: 'running',
+        activeTokens: activeTokens.size,
+        pendingAuthorizations: pendingAuthorizations.size,
+        tokens: Array.from(activeTokens.keys()).map(t => t.substring(0, 20) + '...'),
+        timestamp: new Date().toISOString()
     });
 });
 
