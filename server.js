@@ -1138,12 +1138,10 @@ app.get('/mcp', async (req, res) => {
     
     console.log('✅ Valid token for GET request');
     
-    // For GET requests, return a simple acknowledgment
-    // Claude Desktop might be just checking if the server is alive
+    // Return tools directly in GET response
+    // Claude Desktop seems to use this instead of calling tools/list
     res.json({
-        mcp_version: "2025-06-18",
-        server_name: MOCK_MCP_SERVER_INFO.name,
-        server_version: MOCK_MCP_SERVER_INFO.version
+        tools: MOCK_TOOLS
     });
 });
 
