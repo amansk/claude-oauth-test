@@ -77,21 +77,29 @@ app.get('/.well-known/mcp_oauth', (req, res) => {
 
 // 3. Authorization Page (Claude opens this in browser)
 app.get('/oauth/authorize', (req, res) => {
-    const userCode = generateUserCode();
-    const authCode = crypto.randomBytes(32).toString('hex');
+    // Check if user_code and auth_code are provided (from device flow)
+    let userCode = req.query.user_code;
+    let authCode = req.query.auth_code;
+    
+    // If not provided, generate new ones (for manual testing)
+    if (!userCode || !authCode) {
+        userCode = generateUserCode();
+        authCode = crypto.randomBytes(32).toString('hex');
+        
+        // Store authorization for manual testing
+        pendingAuthorizations.set(userCode, {
+            authCode,
+            authorized: false,
+            redirectUri: req.query.redirect_uri,
+            clientId: req.query.client_id || 'manual-test',
+            expires: Date.now() + 600000,
+            created: new Date().toISOString()
+        });
+    }
+    
     // Force HTTPS for production URLs
     const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
     const baseUrl = protocol + '://' + req.get('host');
-    
-    // Store in memory with expiration
-    pendingAuthorizations.set(userCode, {
-        authCode,
-        authorized: false,
-        redirectUri: req.query.redirect_uri,
-        clientId: req.query.client_id,
-        expires: Date.now() + 600000, // 10 minutes
-        created: new Date().toISOString()
-    });
     
     console.log('🔐 New authorization request:');
     console.log('   User Code:', userCode);
@@ -434,12 +442,50 @@ app.get('/sse', async (req, res) => {
     console.log('   User-Agent:', req.headers['user-agent']);
     console.log('   Full URL:', req.url);
     
-    // TEMP: For debugging, let's allow connection without token to see what Claude sends
+    // Check for access token - if missing, trigger OAuth flow
     if (!token) {
-        console.log('⚠️  No token provided - allowing for debugging');
-        console.log('   Will proxy to real MCP server with fixed API key');
-    } else if (token !== FIXED_API_KEY) {
-        console.log('❌ Invalid token, but allowing for debugging');
+        console.log('❌ No token provided - need OAuth authorization');
+        console.log('   User-Agent:', req.headers['user-agent']);
+        
+        // If this is Claude Desktop, redirect to device authorization
+        const userAgent = req.headers['user-agent'] || '';
+        if (userAgent.includes('Claude') || userAgent.includes('python-httpx')) {
+            console.log('🔍 Detected Claude client - triggering device authorization flow');
+            
+            // Generate device code and redirect to authorization page
+            const userCode = generateUserCode();
+            const authCode = crypto.randomBytes(32).toString('hex');
+            const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+            const baseUrl = protocol + '://' + req.get('host');
+            
+            // Store authorization
+            pendingAuthorizations.set(userCode, {
+                authCode,
+                authorized: false,
+                redirectUri: `${baseUrl}/oauth/callback`,
+                clientId: 'claude-desktop',
+                expires: Date.now() + 600000,
+                created: new Date().toISOString()
+            });
+            
+            console.log('🔐 Generated device authorization:');
+            console.log('   User Code:', userCode);
+            console.log('   Auth Code:', authCode.substring(0, 10) + '...');
+            
+            // Redirect to authorization page
+            return res.redirect(`/oauth/authorize?user_code=${userCode}&auth_code=${authCode}`);
+        }
+        
+        return res.status(401).json({ 
+            error: 'unauthorized',
+            message: 'Access token required. Please complete OAuth flow first.',
+            oauth_url: '/.well-known/mcp_oauth'
+        });
+    }
+    
+    if (token !== FIXED_API_KEY) {
+        console.log('❌ Invalid token');
+        return res.status(401).json({ error: 'Invalid access token' });
     }
     
     console.log('✅ SSE connection authorized');
