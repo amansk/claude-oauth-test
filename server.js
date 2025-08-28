@@ -35,7 +35,22 @@ function cleanupExpiredCodes() {
 // Clean up expired codes every minute
 setInterval(cleanupExpiredCodes, 60000);
 
-// 1. Health check
+// 1. Root endpoint with OAuth info
+app.get('/', (req, res) => {
+    res.json({
+        name: 'Claude OAuth Test Proxy',
+        version: '1.0.0',
+        endpoints: {
+            sse: '/sse (requires access_token)',
+            oauth_discovery: '/.well-known/mcp_oauth',
+            authorize: '/oauth/authorize',
+            token: '/oauth/token'
+        },
+        instructions: 'Add this URL to Claude Desktop: /sse'
+    });
+});
+
+// 2. Health check
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -416,10 +431,30 @@ app.get('/sse', async (req, res) => {
     
     console.log('🔌 SSE connection attempt');
     console.log('   Token provided:', token ? token.substring(0, 20) + '...' : 'None');
+    console.log('   User-Agent:', req.headers['user-agent']);
+    console.log('   Full URL:', req.url);
     
-    if (!token || token !== FIXED_API_KEY) {
+    // For testing, let's see what Claude is actually sending
+    if (!token) {
+        console.log('❌ No token provided, checking if this is Claude Desktop...');
+        
+        // If this looks like Claude Desktop, let's provide OAuth discovery
+        const userAgent = req.headers['user-agent'] || '';
+        if (userAgent.includes('Claude') || userAgent.includes('Anthropic')) {
+            console.log('🔍 Detected Claude client, redirecting to OAuth discovery');
+            return res.redirect('/.well-known/mcp_oauth');
+        }
+        
         console.log('❌ Invalid or missing token');
-        return res.status(401).json({ error: 'Invalid or missing access token' });
+        return res.status(401).json({ 
+            error: 'Invalid or missing access token',
+            hint: 'Try OAuth discovery at /.well-known/mcp_oauth'
+        });
+    }
+    
+    if (token !== FIXED_API_KEY) {
+        console.log('❌ Invalid token');
+        return res.status(401).json({ error: 'Invalid access token' });
     }
     
     console.log('✅ SSE connection authorized');
