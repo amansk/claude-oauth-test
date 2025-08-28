@@ -1006,15 +1006,9 @@ async function handleMcpMessage(message) {
                 result: {
                     protocolVersion: requestedVersion, // Echo back Claude's version
                     capabilities: {
-                        tools: {
-                            listChanged: true  // Server will send notifications when tool list changes
-                        },
-                        prompts: {
-                            listChanged: true  // Server will send notifications when prompt list changes
-                        },
-                        resources: {
-                            listChanged: true  // Server will send notifications when resource list changes
-                        }
+                        tools: {},  // Empty object means tools are supported
+                        prompts: {},  // Empty object means prompts are supported  
+                        resources: {}  // Empty object means resources are supported
                     },
                     serverInfo: {
                         name: MOCK_MCP_SERVER_INFO.name,
@@ -1089,6 +1083,11 @@ async function handleMcpMessage(message) {
             // This is a notification, no response needed
             console.log('✅ MCP client initialized notification received');
             console.log('   Full notification:', JSON.stringify(message, null, 2));
+            
+            // Since we advertised listChanged capability, we should notify about tools
+            // But we can't send notifications in response to HTTP requests
+            // Claude Desktop should call tools/list after this
+            
             return null; // No response for notifications
             
         default:
@@ -1139,13 +1138,12 @@ app.get('/mcp', async (req, res) => {
     
     console.log('✅ Valid token for GET request');
     
-    // For GET requests, return server info with tools
+    // For GET requests, return a simple acknowledgment
+    // Claude Desktop might be just checking if the server is alive
     res.json({
-        name: MOCK_MCP_SERVER_INFO.name,
-        version: MOCK_MCP_SERVER_INFO.version,
-        status: 'ready',
-        tools: MOCK_TOOLS,
-        message: 'MCP server ready for JSON-RPC calls via POST'
+        mcp_version: "2025-06-18",
+        server_name: MOCK_MCP_SERVER_INFO.name,
+        server_version: MOCK_MCP_SERVER_INFO.version
     });
 });
 
