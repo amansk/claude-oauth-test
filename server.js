@@ -47,7 +47,9 @@ app.get('/health', (req, res) => {
 
 // 2. OAuth Discovery (tells Claude about OAuth capabilities)
 app.get('/.well-known/mcp_oauth', (req, res) => {
-    const baseUrl = req.protocol + '://' + req.get('host');
+    // Force HTTPS for production URLs
+    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+    const baseUrl = protocol + '://' + req.get('host');
     console.log('🔍 OAuth discovery requested from:', req.ip);
     
     res.json({
@@ -62,7 +64,9 @@ app.get('/.well-known/mcp_oauth', (req, res) => {
 app.get('/oauth/authorize', (req, res) => {
     const userCode = generateUserCode();
     const authCode = crypto.randomBytes(32).toString('hex');
-    const baseUrl = req.protocol + '://' + req.get('host');
+    // Force HTTPS for production URLs
+    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+    const baseUrl = protocol + '://' + req.get('host');
     
     // Store in memory with expiration
     pendingAuthorizations.set(userCode, {
