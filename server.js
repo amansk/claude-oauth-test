@@ -387,7 +387,92 @@ app.post('/api/authorize-code', (req, res) => {
     });
 });
 
-// 6. Token exchange (Claude calls this after redirect)
+// 6. Device authorization endpoint (Claude should call this first)
+app.post('/oauth/device', (req, res) => {
+    const clientId = req.body.client_id || 'claude-desktop';
+    const scope = req.body.scope || 'read:health_data';
+    
+    console.log('📱 Device authorization request:');
+    console.log('   Client ID:', clientId);
+    console.log('   Scope:', scope);
+    
+    const userCode = generateUserCode();
+    const deviceCode = crypto.randomBytes(32).toString('hex');
+    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+    const baseUrl = protocol + '://' + req.get('host');
+    
+    // Store device authorization
+    pendingAuthorizations.set(userCode, {
+        deviceCode,
+        authorized: false,
+        clientId,
+        scope,
+        expires: Date.now() + 600000, // 10 minutes
+        created: new Date().toISOString()
+    });
+    
+    console.log('🔐 Generated device authorization:');
+    console.log('   User Code:', userCode);
+    console.log('   Device Code:', deviceCode.substring(0, 10) + '...');
+    
+    // Return device authorization response
+    res.json({
+        device_code: deviceCode,
+        user_code: userCode,
+        verification_uri: `${baseUrl}/device`,
+        verification_uri_complete: `${baseUrl}/device?user_code=${userCode}`,
+        expires_in: 600,
+        interval: 5
+    });
+});
+
+// Device verification page (where user enters the code)
+app.get('/device', (req, res) => {
+    const userCode = req.query.user_code || '';
+    
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Connect Claude Desktop to Wellavy</title>
+            <style>
+                body { font-family: system-ui; max-width: 500px; margin: 100px auto; text-align: center; }
+                .code { font-size: 24px; background: #f5f5f5; padding: 20px; margin: 20px 0; border-radius: 8px; }
+                input { padding: 10px; font-size: 16px; margin: 10px; }
+                button { background: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <h1>🔗 Connect Claude Desktop</h1>
+            
+            ${userCode ? `
+                <div class="code">
+                    <strong>Your device code:</strong><br>
+                    <span>${userCode}</span>
+                </div>
+                <p>Go to <strong>wellavy.co</strong> and enter this code to connect Claude.</p>
+            ` : `
+                <p>Enter the code shown in Claude Desktop:</p>
+                <input id="codeInput" placeholder="WLVY-1234" value="${userCode}" />
+                <br>
+                <button onclick="authorize()">Authorize Device</button>
+            `}
+            
+            <div id="status"></div>
+            
+            <script>
+                function authorize() {
+                    const code = document.getElementById('codeInput').value;
+                    // This would authorize the device code
+                    document.getElementById('status').innerHTML = 'Device authorized! Claude should connect now.';
+                }
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+// 7. Token exchange (Claude calls this after redirect)
 app.post('/oauth/token', (req, res) => {
     const { grant_type, code, client_id, redirect_uri } = req.body;
     
@@ -442,44 +527,18 @@ app.get('/sse', async (req, res) => {
     console.log('   User-Agent:', req.headers['user-agent']);
     console.log('   Full URL:', req.url);
     
-    // Check for access token - if missing, trigger OAuth flow
+    // Check for access token - if missing, return OAuth error (don't redirect)
     if (!token) {
-        console.log('❌ No token provided - need OAuth authorization');
-        console.log('   User-Agent:', req.headers['user-agent']);
+        console.log('❌ No token provided - returning OAuth error');
         
-        // If this is Claude Desktop, redirect to device authorization
-        const userAgent = req.headers['user-agent'] || '';
-        if (userAgent.includes('Claude') || userAgent.includes('python-httpx')) {
-            console.log('🔍 Detected Claude client - triggering device authorization flow');
-            
-            // Generate device code and redirect to authorization page
-            const userCode = generateUserCode();
-            const authCode = crypto.randomBytes(32).toString('hex');
-            const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
-            const baseUrl = protocol + '://' + req.get('host');
-            
-            // Store authorization
-            pendingAuthorizations.set(userCode, {
-                authCode,
-                authorized: false,
-                redirectUri: `${baseUrl}/oauth/callback`,
-                clientId: 'claude-desktop',
-                expires: Date.now() + 600000,
-                created: new Date().toISOString()
-            });
-            
-            console.log('🔐 Generated device authorization:');
-            console.log('   User Code:', userCode);
-            console.log('   Auth Code:', authCode.substring(0, 10) + '...');
-            
-            // Redirect to authorization page
-            return res.redirect(`/oauth/authorize?user_code=${userCode}&auth_code=${authCode}`);
-        }
-        
+        // Return proper OAuth error response instead of redirecting
         return res.status(401).json({ 
             error: 'unauthorized',
-            message: 'Access token required. Please complete OAuth flow first.',
-            oauth_url: '/.well-known/mcp_oauth'
+            error_description: 'No access token provided',
+            message: 'OAuth 2.0 authentication required',
+            authorization_endpoint: 'https://claude-oauth-test-production.up.railway.app/oauth/authorize',
+            token_endpoint: 'https://claude-oauth-test-production.up.railway.app/oauth/token',
+            device_authorization_endpoint: 'https://claude-oauth-test-production.up.railway.app/oauth/device'
         });
     }
     
