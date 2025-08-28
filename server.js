@@ -127,7 +127,12 @@ app.post('/', async (req, res) => {
     if (req.body && req.body.jsonrpc === '2.0') {
         try {
             const response = await handleMcpMessage(req.body);
-            res.json(response);
+            if (response !== null) {
+                res.json(response);
+            } else {
+                // No response needed for notifications
+                res.status(200).end();
+            }
         } catch (error) {
             console.error('❌ MCP error at root:', error.message);
             res.json({
@@ -809,7 +814,12 @@ app.post('/sse', async (req, res) => {
     if (req.body && req.body.jsonrpc === '2.0') {
         try {
             const response = await handleMcpMessage(req.body);
-            res.json(response);
+            if (response !== null) {
+                res.json(response);
+            } else {
+                // No response needed for notifications
+                res.status(200).end();
+            }
         } catch (error) {
             console.error('❌ MCP error:', error.message);
             res.json({
@@ -875,6 +885,11 @@ async function handleMcpMessage(message) {
             } else {
                 throw new Error(`Unknown tool: ${toolName}`);
             }
+            
+        case 'notifications/initialized':
+            // This is a notification, no response needed
+            console.log('✅ MCP client initialized notification received');
+            return null; // No response for notifications
             
         default:
             throw new Error(`Unsupported method: ${method}`);
@@ -943,7 +958,12 @@ app.post('/mcp', async (req, res) => {
     if (req.body && req.body.jsonrpc === '2.0') {
         try {
             const response = await handleMcpMessage(req.body);
-            res.json(response);
+            if (response !== null) {
+                res.json(response);
+            } else {
+                // No response needed for notifications
+                res.status(200).end();
+            }
         } catch (error) {
             console.error('❌ MCP error:', error.message);
             res.json({
