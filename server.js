@@ -12,6 +12,7 @@ app.use(cors({
     maxAge: 86400
 }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Add form data parsing
 
 // In-memory storage (resets on server restart)
 const pendingAuthorizations = new Map();
@@ -618,9 +619,15 @@ app.get('/device', (req, res) => {
 
 // 7. Token exchange (supports both authorization_code and device_code flows)
 app.post('/oauth/token', (req, res) => {
-    const { grant_type, code, device_code, client_id } = req.body;
+    // Handle both JSON and form data
+    const grant_type = req.body.grant_type;
+    const code = req.body.code;
+    const device_code = req.body.device_code;  
+    const client_id = req.body.client_id;
     
     console.log('🎫 Token exchange request:');
+    console.log('   Content-Type:', req.headers['content-type']);
+    console.log('   Body:', JSON.stringify(req.body, null, 2));
     console.log('   Grant Type:', grant_type);
     console.log('   Code/Device Code:', (code || device_code)?.substring(0, 10) + '...');
     console.log('   Client ID:', client_id);
