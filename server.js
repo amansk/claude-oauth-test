@@ -212,25 +212,30 @@ app.post('/oauth/register', (req, res) => {
 
 // 3. Authorization Page (Claude opens this in browser)
 app.get('/oauth/authorize', (req, res) => {
-    // Check if user_code and auth_code are provided (from device flow)
-    let userCode = req.query.user_code;
-    let authCode = req.query.auth_code;
+    const { client_id, redirect_uri, state, response_type, scope } = req.query;
     
-    // If not provided, generate new ones (for manual testing)
-    if (!userCode || !authCode) {
-        userCode = generateUserCode();
-        authCode = crypto.randomBytes(32).toString('hex');
-        
-        // Store authorization for manual testing
-        pendingAuthorizations.set(userCode, {
-            authCode,
-            authorized: false,
-            redirectUri: req.query.redirect_uri,
-            clientId: req.query.client_id || 'manual-test',
-            expires: Date.now() + 600000,
-            created: new Date().toISOString()
-        });
-    }
+    console.log('🔐 OAuth authorization request:');
+    console.log('   client_id:', client_id);
+    console.log('   redirect_uri:', redirect_uri);
+    console.log('   state:', state);
+    console.log('   response_type:', response_type);
+    
+    // Generate authorization code for Claude's standard OAuth flow
+    const authCode = crypto.randomBytes(32).toString('hex');
+    const userCode = generateUserCode(); // For display to user
+    
+    // Store authorization with all Claude's parameters
+    pendingAuthorizations.set(userCode, {
+        authCode,
+        authorized: false,
+        clientId: client_id,
+        redirectUri: redirect_uri,
+        state: state, // Important: store Claude's state parameter
+        responseType: response_type,
+        scope: scope,
+        expires: Date.now() + 600000,
+        created: new Date().toISOString()
+    });
     
     // Force HTTPS for production URLs
     const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
@@ -404,7 +409,10 @@ app.get('/oauth/authorize', (req, res) => {
                             if (data.authorized) {
                                 showStatus('✅ Connected successfully! Redirecting Claude...', 'success');
                                 setTimeout(() => {
-                                    const redirectUrl = data.redirect_uri + '?code=' + data.auth_code;
+                                    let redirectUrl = data.redirect_uri + '?code=' + data.auth_code;
+                                    if (data.state) {
+                                        redirectUrl += '&state=' + encodeURIComponent(data.state);
+                                    }
                                     console.log('Redirecting to:', redirectUrl);
                                     window.location.href = redirectUrl;
                                 }, 2000);
@@ -475,6 +483,7 @@ app.get('/oauth/check', (req, res) => {
         authorized: auth.authorized,
         redirect_uri: auth.redirectUri,
         auth_code: auth.authCode,
+        state: auth.state,
         expires_in: Math.floor((auth.expires - Date.now()) / 1000)
     });
 });
