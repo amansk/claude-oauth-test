@@ -1155,11 +1155,12 @@ app.get('/mcp', async (req, res) => {
     
     console.log('✅ SSE connection authorized');
     
-    // Set SSE headers
+    // Set SSE headers (avoid proxy buffering)
     res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
     });
     
     // Create session and send endpoint event
@@ -1170,6 +1171,15 @@ app.get('/mcp', async (req, res) => {
     res.write(`data: ${endpointPath}\n\n`);
     console.log('📡 SSE session established:', sessionId);
     console.log('   Endpoint for POST:', endpointPath);
+    // Proactively notify the client that tools may have changed so it fetches tools/list
+    try {
+        const proactiveNotif = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
+        res.write(`event: message\n`);
+        res.write(`data: ${JSON.stringify(proactiveNotif)}\n\n`);
+        console.log('   📣 Emitted notifications/tools/list_changed (proactive)');
+    } catch (e) {
+        console.log('   ⚠️ Failed to emit proactive tools/list_changed:', e?.message || String(e));
+    }
     
     // Keep-alive pings
     const keepAlive = setInterval(() => {
