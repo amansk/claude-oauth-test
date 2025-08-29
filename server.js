@@ -197,7 +197,7 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
         response_modes_supported: ['query'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
-        revocation_endpoint: `${baseUrl}/oauth/token`,
+        revocation_endpoint: `${baseUrl}/oauth/revoke`,
         code_challenge_methods_supported: ['plain', 'S256']
     });
 });
@@ -1067,6 +1067,9 @@ async function handleMcpMessage(message) {
             const toolArgs = params?.arguments || {};
             
             console.log('🛠️  Tool call:', toolName, 'with args:', toolArgs);
+            if (!toolName) {
+                throw new Error('tools/call missing tool name');
+            }
             
             if (toolName === 'test_tool') {
                 const message = toolArgs.message || 'Hello from test tool!';
@@ -1096,6 +1099,16 @@ async function handleMcpMessage(message) {
             // Claude Desktop should call tools/list after this
             
             return null; // No response for notifications
+        
+        case 'notifications/cancelled':
+            // Client cancelled a request (e.g., timeout or user cancel). No response needed.
+            console.log('⚠️ MCP request cancelled:', params?.requestId, params?.reason);
+            return null;
+        
+        case 'notifications/tools/list_changed':
+            // Clients can notify back of list changes; log it.
+            console.log('🔁 Received tools/list_changed notification from client');
+            return null;
             
         default:
             throw new Error(`Unsupported method: ${method}`);
@@ -1156,10 +1169,18 @@ app.get('/mcp', async (req, res) => {
     res.write(`event: endpoint\n`);
     res.write(`data: ${endpointPath}\n\n`);
     console.log('📡 SSE session established:', sessionId);
+    console.log('   Endpoint for POST:', endpointPath);
     
     // Keep-alive pings
     const keepAlive = setInterval(() => {
-        res.write(`:ping\n\n`);
+        try {
+            res.write(`: ping\n\n`);
+        } catch (e) {
+            console.log('⚠️ SSE ping write failed, closing session:', sessionId);
+            clearInterval(keepAlive);
+            sseSessions.delete(sessionId);
+            try { res.end(); } catch {}
+        }
     }, 30000);
     
     // Cleanup on close
@@ -1175,6 +1196,7 @@ app.post('/mcp', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     const sessionId = req.query.sessionId;
     console.log('📮 MCP JSON-RPC message to /mcp endpoint');
+    console.log('   sessionId:', sessionId || '(none)');
     console.log('   Method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
     console.log('   Full request body:', JSON.stringify(req.body, null, 2));
@@ -1200,6 +1222,9 @@ app.post('/mcp', async (req, res) => {
     }
     
     const hasSession = typeof sessionId === 'string' && sseSessions.has(sessionId);
+    if (typeof sessionId === 'string' && !hasSession) {
+        console.log('   ⚠️ Provided sessionId not found or closed:', sessionId);
+    }
     
     // Handle MCP JSON-RPC messages
     if (req.body && req.body.jsonrpc === '2.0') {
@@ -1213,12 +1238,14 @@ app.post('/mcp', async (req, res) => {
                     if (response !== null) {
                         sseRes.write(`event: message\n`);
                         sseRes.write(`data: ${JSON.stringify(response)}\n\n`);
+                        console.log('   📤 Streamed response over SSE for id:', response.id);
                     }
                     // If client signaled initialized, notify tools list changed
                     if (req.body.method === 'notifications/initialized') {
                         const notif = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
                         sseRes.write(`event: message\n`);
                         sseRes.write(`data: ${JSON.stringify(notif)}\n\n`);
+                        console.log('   📣 Emitted notifications/tools/list_changed');
                     }
                 }
                 return res.status(202).end();
