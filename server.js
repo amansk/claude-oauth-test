@@ -923,20 +923,22 @@ app.get('/sse', async (req, res) => {
     
     console.log('✅ SSE connection authorized');
     
-    // Set SSE headers
+    // Create session FIRST
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    sseSessions.set(sessionId, res);
+    
+    // Set SSE headers (INCLUDING Mcp-Session-Id!)
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Cache-Control'
+        'Access-Control-Allow-Headers': 'Cache-Control',
+        'Mcp-Session-Id': sessionId  // CRITICAL: Claude Desktop needs this!
     });
     
     console.log('📡 SSE connection established - sending endpoint URL');
-    
-    // Create session and send endpoint event (CRITICAL for Claude Desktop!)
-    const sessionId = crypto.randomBytes(16).toString('hex');
-    sseSessions.set(sessionId, res);
+    console.log('   Session ID:', sessionId);
     
     // Build full URL for the endpoint
     const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
@@ -1196,17 +1198,20 @@ app.get('/mcp', async (req, res) => {
     
     console.log('✅ SSE connection authorized');
     
+    // Create session FIRST before setting headers
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    
     // Set SSE headers (avoid proxy buffering)
     res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Mcp-Session-Id': sessionId  // CRITICAL: Claude Desktop needs this!
     });
     
-    // Create session and send endpoint event
-    const sessionId = crypto.randomBytes(16).toString('hex');
+    // Store session for message routing
     sseSessions.set(sessionId, res);
     
     // CRITICAL FIX: Send full URL as plain string, not relative path or JSON!
