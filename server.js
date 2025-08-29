@@ -1144,7 +1144,9 @@ async function handleMcpMessage(message) {
                 result: {
                     protocolVersion: requestedVersion,  // Add this back
                     capabilities: {
-                        tools: {},
+                        tools: {
+                            listChanged: true
+                        },
                         prompts: {},
                         resources: {}
                     },
