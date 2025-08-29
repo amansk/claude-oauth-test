@@ -147,7 +147,7 @@ app.get('/', (req, res) => {
         console.log('📡 SSE session established at root:', sessionId);
         console.log('   Endpoint URL sent:', endpointUrl);
         
-        // Keep connection alive with more frequent pings for Railway
+        // Keep connection alive with very aggressive pings for Railway
         const pingInterval = setInterval(() => {
             try {
                 res.write(': ping\n\n');
@@ -157,12 +157,26 @@ app.get('/', (req, res) => {
                 clearInterval(pingInterval);
                 sseSessions.delete(sessionId);
             }
-        }, 30000); // More frequent pings for Railway
+        }, 10000); // Very aggressive pings every 10 seconds
+        
+        // Additional heartbeat for Railway proxy
+        const heartbeatInterval = setInterval(() => {
+            try {
+                res.write(`data: {"type":"heartbeat","timestamp":"${new Date().toISOString()}"}\n\n`);
+                res.flushHeaders();
+            } catch (err) {
+                console.log('💓 Heartbeat failed, connection closed');
+                clearInterval(heartbeatInterval);
+                clearInterval(pingInterval);
+                sseSessions.delete(sessionId);
+            }
+        }, 5000); // Heartbeat every 5 seconds
         
         // Clean up on client disconnect
         req.on('close', () => {
             console.log('📡 SSE connection closed by client at root');
             clearInterval(pingInterval);
+            clearInterval(heartbeatInterval);
             sseSessions.delete(sessionId);
         });
         
