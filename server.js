@@ -39,7 +39,8 @@ const MOCK_TOOLS = [
                     type: "string",
                     description: "Optional message to include in response"
                 }
-            }
+            },
+            required: []
         }
     }
 ];
@@ -960,8 +961,9 @@ app.post('/sse', async (req, res) => {
     console.log('   Method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
     
-    // Check authentication
-    if (!token || token !== FIXED_API_KEY) {
+    // Check authentication (accept fixed API key or issued OAuth tokens)
+    const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
+    if (!token || !isValidToken) {
         return res.status(401).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: 'Unauthorized' },
@@ -1008,9 +1010,9 @@ async function handleMcpMessage(message) {
                 result: {
                     protocolVersion: requestedVersion,  // Add this back
                     capabilities: {
-                        tools: {
-                            listChanged: false
-                        }
+                        tools: {},
+                        prompts: {},
+                        resources: {}
                     },
                     serverInfo: {
                         name: MOCK_MCP_SERVER_INFO.name,
