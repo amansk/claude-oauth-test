@@ -32,7 +32,7 @@ const MOCK_TOOLS = [
     {
         name: "test_tool",
         description: "A simple test tool that responds with OK",
-        inputSchema: {
+        input_schema: {
             type: "object",
             properties: {
                 message: {
