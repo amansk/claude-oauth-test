@@ -22,6 +22,9 @@ const FIXED_API_KEY = 'htr_sk_02df8a9c3ab7e5009e55c223925a836c';
 // Map: access_token -> { client_id, expires_at, refresh_token, issued_at }
 const activeTokens = new Map();
 
+// Track active SSE sessions: sessionId -> response object
+const sseSessions = new Map();
+
 // Mock MCP Server - completely standalone
 const MOCK_MCP_SERVER_INFO = {
     name: "Wellavy Test MCP Server",
@@ -1105,7 +1108,7 @@ app.get('/mcp', async (req, res) => {
     const token = req.query.access_token || 
                   (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
     
-    console.log('🔌 MCP GET connection attempt');
+    console.log('🔌 MCP SSE connection attempt');
     console.log('   Token provided:', token ? token.substring(0, 20) + '...' : 'None');
     console.log('   User-Agent:', req.headers['user-agent']);
     console.log('   Full URL:', req.url);
@@ -1117,10 +1120,7 @@ app.get('/mcp', async (req, res) => {
         const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
         const baseUrl = protocol + '://' + req.get('host');
         
-        // Set WWW-Authenticate header as mentioned in the OAuth specs
         res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Missing or invalid bearer token"`);
-        
-        // Return simple OAuth error response (like Torch)
         return res.status(401).json({ 
             error: 'invalid_token',
             error_description: 'Missing or invalid bearer token'
@@ -1140,24 +1140,47 @@ app.get('/mcp', async (req, res) => {
         });
     }
     
-    console.log('✅ Valid token for GET request');
+    console.log('✅ SSE connection authorized');
     
-    // Return empty success response for GET
-    // This might signal Claude Desktop to proceed with tools/list
-    res.json({});
+    // Set SSE headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    });
+    
+    // Create session and send endpoint event
+    const sessionId = crypto.randomBytes(16).toString('hex');
+    sseSessions.set(sessionId, res);
+    const endpointPath = `/mcp?sessionId=${sessionId}`;
+    res.write(`event: endpoint\n`);
+    res.write(`data: ${endpointPath}\n\n`);
+    console.log('📡 SSE session established:', sessionId);
+    
+    // Keep-alive pings
+    const keepAlive = setInterval(() => {
+        res.write(`:ping\n\n`);
+    }, 30000);
+    
+    // Cleanup on close
+    req.on('close', () => {
+        clearInterval(keepAlive);
+        sseSessions.delete(sessionId);
+        console.log('🔴 SSE session closed:', sessionId);
+    });
 });
 
 // MCP endpoint - POST (handles JSON-RPC)
 app.post('/mcp', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
-    
+    const sessionId = req.query.sessionId;
     console.log('📮 MCP JSON-RPC message to /mcp endpoint');
     console.log('   Method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
     console.log('   Full request body:', JSON.stringify(req.body, null, 2));
     console.log('   Headers:', JSON.stringify(req.headers, null, 2));
     
-    // Check if token exists
+    // Check token
     if (!token) {
         console.log('❌ No token provided');
         return res.status(401).json({
@@ -1166,12 +1189,9 @@ app.post('/mcp', async (req, res) => {
             id: req.body?.id || null
         });
     }
-    
-    // Check if token is valid (either fixed API key or OAuth token)
     const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
     if (!isValidToken) {
         console.log('❌ Invalid token:', token.substring(0, 20) + '...');
-        console.log('   Active tokens:', Array.from(activeTokens.keys()).map(t => t.substring(0, 20) + '...'));
         return res.status(401).json({
             jsonrpc: '2.0',
             error: { code: -32001, message: 'Unauthorized - invalid token' },
@@ -1179,25 +1199,53 @@ app.post('/mcp', async (req, res) => {
         });
     }
     
-    console.log('✅ Valid token accepted');
+    const hasSession = typeof sessionId === 'string' && sseSessions.has(sessionId);
     
     // Handle MCP JSON-RPC messages
     if (req.body && req.body.jsonrpc === '2.0') {
         try {
             const response = await handleMcpMessage(req.body);
+            
+            // If this POST is tied to an SSE session, stream response over SSE and return 202
+            if (hasSession) {
+                const sseRes = sseSessions.get(sessionId);
+                if (sseRes) {
+                    if (response !== null) {
+                        sseRes.write(`event: message\n`);
+                        sseRes.write(`data: ${JSON.stringify(response)}\n\n`);
+                    }
+                    // If client signaled initialized, notify tools list changed
+                    if (req.body.method === 'notifications/initialized') {
+                        const notif = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
+                        sseRes.write(`event: message\n`);
+                        sseRes.write(`data: ${JSON.stringify(notif)}\n\n`);
+                    }
+                }
+                return res.status(202).end();
+            }
+            
+            // Fallback: HTTP response for non-SSE clients
             if (response !== null) {
                 res.json(response);
             } else {
-                // No response needed for notifications
                 res.status(200).end();
             }
         } catch (error) {
             console.error('❌ MCP error:', error.message);
-            res.json({
+            const errPayload = {
                 jsonrpc: '2.0',
                 error: { code: -32000, message: error.message },
                 id: req.body.id || null
-            });
+            };
+            if (hasSession) {
+                const sseRes = sseSessions.get(sessionId);
+                if (sseRes) {
+                    sseRes.write(`event: message\n`);
+                    sseRes.write(`data: ${JSON.stringify(errPayload)}\n\n`);
+                }
+                return res.status(202).end();
+            }
+            res.json(errPayload);
         }
     } else {
         res.status(400).json({ error: 'Expected MCP JSON-RPC 2.0 message' });
