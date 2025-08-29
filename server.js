@@ -71,7 +71,7 @@ function cleanupExpiredCodes() {
 // Clean up expired codes every minute
 setInterval(cleanupExpiredCodes, 60000);
 
-// 1. Root endpoint - redirect to /mcp (like how some MCP servers work)
+// 1. Root endpoint - handle both SSE and regular requests
 app.get('/', (req, res) => {
     // Get token from query or header
     const token = req.query.access_token || 
@@ -80,7 +80,95 @@ app.get('/', (req, res) => {
     console.log('🔌 MCP connection attempt to root /');
     console.log('   Token provided:', token ? token.substring(0, 20) + '...' : 'None');
     console.log('   User-Agent:', req.headers['user-agent']);
+    console.log('   Accept header:', req.headers.accept);
     
+    // Check if this is an SSE request (the critical second connection from Claude Desktop)
+    const isSSERequest = req.headers.accept && req.headers.accept.includes('text/event-stream');
+    
+    if (isSSERequest) {
+        console.log('📡 This is the second SSE connection from Claude Desktop!');
+        
+        // Check for access token - if missing, return OAuth error with WWW-Authenticate header
+        if (!token) {
+            console.log('❌ No token provided for SSE - returning OAuth error with WWW-Authenticate header');
+            
+            const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+            const baseUrl = protocol + '://' + req.get('host');
+            
+            // Set WWW-Authenticate header as mentioned in the OAuth specs
+            res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Missing or invalid bearer token"`);
+            
+            // Return simple OAuth error response (like Torch)
+            return res.status(401).json({ 
+                error: 'invalid_token',
+                error_description: 'Missing or invalid bearer token'
+            });
+        }
+        
+        // Check if token is valid (either fixed API key or OAuth token)
+        const isValidToken = token === FIXED_API_KEY || activeTokens.has(token);
+        if (!isValidToken) {
+            console.log('❌ Invalid token for SSE');
+            const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+            const baseUrl = protocol + '://' + req.get('host');
+            res.set('WWW-Authenticate', `Bearer realm="${baseUrl}", error="invalid_token", error_description="Invalid bearer token"`);
+            return res.status(401).json({ 
+                error: 'invalid_token',
+                error_description: 'Invalid bearer token'
+            });
+        }
+        
+        console.log('✅ SSE connection authorized at root');
+        
+        // Create session FIRST before setting headers
+        const sessionId = crypto.randomBytes(16).toString('hex');
+        
+        // Set SSE headers (INCLUDING Mcp-Session-Id!)
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Cache-Control',
+            'Mcp-Session-Id': sessionId  // CRITICAL: Claude Desktop needs this!
+        });
+        
+        // Store session for message routing
+        sseSessions.set(sessionId, res);
+        
+        // Build full URL for the endpoint (like our working local server)
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        const endpointUrl = `${baseUrl}/messages?sessionId=${sessionId}`;
+        
+        // Send plain URL string in endpoint event (NOT JSON!)
+        res.write(`event: endpoint\n`);
+        res.write(`data: ${endpointUrl}\n\n`);
+        console.log('📡 SSE session established at root:', sessionId);
+        console.log('   Endpoint URL sent:', endpointUrl);
+        
+        // Keep connection alive with periodic pings
+        const pingInterval = setInterval(() => {
+            try {
+                res.write(': ping\n\n');
+            } catch (err) {
+                console.log('📡 SSE connection closed during ping');
+                clearInterval(pingInterval);
+                sseSessions.delete(sessionId);
+            }
+        }, 60000);
+        
+        // Clean up on client disconnect
+        req.on('close', () => {
+            console.log('📡 SSE connection closed by client at root');
+            clearInterval(pingInterval);
+            sseSessions.delete(sessionId);
+        });
+        
+        return; // Important: return here to avoid sending JSON response
+    }
+    
+    // Regular GET request (not SSE) - check token and return server info
     // Check for access token - if missing, return OAuth error with WWW-Authenticate header
     if (!token) {
         console.log('❌ No token provided at root - returning OAuth error with WWW-Authenticate header');
