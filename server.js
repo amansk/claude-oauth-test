@@ -147,16 +147,17 @@ app.get('/', (req, res) => {
         console.log('📡 SSE session established at root:', sessionId);
         console.log('   Endpoint URL sent:', endpointUrl);
         
-        // Keep connection alive with periodic pings
+        // Keep connection alive with more frequent pings for Railway
         const pingInterval = setInterval(() => {
             try {
                 res.write(': ping\n\n');
+                res.flushHeaders();
             } catch (err) {
                 console.log('📡 SSE connection closed during ping');
                 clearInterval(pingInterval);
                 sseSessions.delete(sessionId);
             }
-        }, 60000);
+        }, 30000); // More frequent pings for Railway
         
         // Clean up on client disconnect
         req.on('close', () => {
