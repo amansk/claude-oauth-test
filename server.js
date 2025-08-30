@@ -162,24 +162,10 @@ app.get('/', (req, res) => {
             }
         }, 10000); // Very aggressive pings every 10 seconds
         
-        // Additional heartbeat for Railway proxy
-        const heartbeatInterval = setInterval(() => {
-            try {
-                res.write(`data: {"type":"heartbeat","timestamp":"${new Date().toISOString()}"}\n\n`);
-                res.flushHeaders();
-            } catch (err) {
-                console.log('💓 Heartbeat failed, connection closed');
-                clearInterval(heartbeatInterval);
-                clearInterval(pingInterval);
-                sseSessions.delete(sessionId);
-            }
-        }, 5000); // Heartbeat every 5 seconds
-        
         // Clean up on client disconnect
         req.on('close', () => {
             console.log('📡 SSE connection closed by client at root');
             clearInterval(pingInterval);
-            clearInterval(heartbeatInterval);
             sseSessions.delete(sessionId);
         });
         
@@ -1075,12 +1061,10 @@ app.get('/sse', async (req, res) => {
     res.write(`data: ${endpointUrl}\n\n`);
     console.log('   Endpoint URL sent:', endpointUrl);
     
-    // Keep connection alive with periodic pings
+    // Keep connection alive with periodic pings (use SSE comments)
     const pingInterval = setInterval(() => {
         try {
-            // Only send pings after connection has been established for a while
-            // and no real MCP communication is happening
-            res.write('data: {"type":"ping","timestamp":"' + new Date().toISOString() + '"}\\n\\n');
+            res.write(': ping\n\n');
         } catch (err) {
             console.log('📡 SSE connection closed during ping');
             clearInterval(pingInterval);
@@ -1352,15 +1336,7 @@ app.get('/sse', async (req, res) => {
     res.write(`data: ${endpointUrl}\n\n`);
     console.log('📡 SSE session established:', sessionId);
     console.log('   Endpoint URL for POST:', endpointUrl);
-    // Proactively notify the client that tools may have changed so it fetches tools/list
-    try {
-        const proactiveNotif = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
-        res.write(`event: message\n`);
-        res.write(`data: ${JSON.stringify(proactiveNotif)}\n\n`);
-        console.log('   📣 Emitted notifications/tools/list_changed (proactive)');
-    } catch (e) {
-        console.log('   ⚠️ Failed to emit proactive tools/list_changed:', e?.message || String(e));
-    }
+    // Do not proactively emit tools/list_changed here; wait until after initialize or real changes
     
     // Keep-alive pings
     const keepAlive = setInterval(() => {
@@ -1468,15 +1444,7 @@ app.all('/mcp', async (req, res) => {
         res.write(`data: ${endpointUrl}\n\n`);
         console.log('📡 MCP SSE session established:', sessionIdForSSE);
         
-        // Send tools notification
-        try {
-            const toolsNotif = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
-            res.write(`event: message\n`);
-            res.write(`data: ${JSON.stringify(toolsNotif)}\n\n`);
-            console.log('   📣 Sent tools/list_changed notification');
-        } catch (e) {
-            console.log('   ⚠️ Failed to send tools notification:', e);
-        }
+        // Do not proactively emit tools/list_changed; client will fetch after initialize
         
         // Keep alive
         const keepAlive = setInterval(() => {
