@@ -35,7 +35,7 @@ const MOCK_TOOLS = [
     {
         name: "test_tool",
         description: "A simple test tool that responds with OK",
-        inputSchema: {  // Changed from input_schema to inputSchema (camelCase)
+        inputSchema: {
             type: "object",
             properties: {
                 message: {
@@ -44,6 +44,34 @@ const MOCK_TOOLS = [
                 }
             },
             required: []
+        }
+    },
+    {
+        name: "get_time",
+        description: "Get the current time",
+        inputSchema: {
+            type: "object",
+            properties: {
+                timezone: {
+                    type: "string",
+                    description: "Timezone (e.g., UTC, America/New_York)"
+                }
+            },
+            required: []
+        }
+    },
+    {
+        name: "echo",
+        description: "Echo back the provided message",
+        inputSchema: {
+            type: "object",
+            properties: {
+                text: {
+                    type: "string",
+                    description: "Text to echo back"
+                }
+            },
+            required: ["text"]
         }
     }
 ];
