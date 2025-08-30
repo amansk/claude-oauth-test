@@ -14,6 +14,18 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Add form data parsing
 
+// Trust reverse proxies (Railway, Fly) so req.protocol reflects X-Forwarded-Proto
+app.set('trust proxy', true);
+
+// Build external base URL respecting platform proxies
+function getBaseUrl(req) {
+    const host = req.get('host');
+    const xfProto = (req.headers['x-forwarded-proto'] || '').split(',')[0];
+    const isPlatform = host && (host.includes('railway.app') || host.includes('fly.dev'));
+    const protocol = xfProto || (isPlatform ? 'https' : req.protocol);
+    return protocol + '://' + host;
+}
+
 // In-memory storage (resets on server restart)
 const pendingAuthorizations = new Map();
 const FIXED_API_KEY = 'htr_sk_02df8a9c3ab7e5009e55c223925a836c';
@@ -319,6 +331,17 @@ app.get('/.well-known/oauth-authorization-server', (req, res) => {
         token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
         revocation_endpoint: `${baseUrl}/oauth/revoke`,
         code_challenge_methods_supported: ['plain', 'S256']
+    });
+});
+
+// OAuth Protected Resource endpoint - tells Claude that /mcp requires OAuth
+app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
+    const baseUrl = getBaseUrl(req);
+    console.log('🔐 OAuth protected resource discovery requested');
+    
+    res.json({
+        resource: "mcp",
+        oauth_discovery_url: `${baseUrl}/.well-known/oauth-authorization-server`
     });
 });
 
