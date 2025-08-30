@@ -1263,8 +1263,8 @@ async function handleMcpMessage(message) {
     }
 }
 
-// Alternative MCP endpoint - GET (like Torch)
-app.get('/mcp', async (req, res) => {
+// SSE endpoint - GET (pure SSE)
+app.get('/sse', async (req, res) => {
     // Get token from query or header
     const token = req.query.access_token || 
                   (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
@@ -1360,8 +1360,8 @@ app.get('/mcp', async (req, res) => {
     });
 });
 
-// MCP endpoint - POST (handles JSON-RPC)
-app.post('/mcp', async (req, res) => {
+// MCP streaming HTTP endpoint - handles both POST and GET with content negotiation  
+app.all('/mcp', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     const sessionId = req.query.sessionId;
     console.log('📮 MCP JSON-RPC message to /mcp endpoint');

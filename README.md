@@ -58,6 +58,7 @@ Claude Desktop → OAuth Proxy → Your Real MCP Server
 - `GET /oauth/authorize` - Authorization page (opens in browser)
 - `POST /oauth/token` - Token exchange (for Claude)
 - `GET /sse` - SSE endpoint (for Claude MCP connection)
+- `POST /messages` - JSON-RPC endpoint for MCP requests (after SSE connection)
 - `POST /api/authorize-code` - Code authorization (for wellavy.co)
 - `GET /debug/pending` - See pending authorizations
 
