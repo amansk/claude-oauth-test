@@ -52,9 +52,12 @@ console.log('🚀 Claude OAuth Test MCP Server Starting...');
 console.log('📋 Using API Key:', FIXED_API_KEY.substring(0, 20) + '...');
 console.log('🧪 Mock MCP Server with test_tool');
 
-// Generate short user code
+// Generate short user code with better uniqueness
 function generateUserCode() {
-    return 'WLVY-' + Math.random().toString(36).substr(2, 4).toUpperCase();
+    // Use two random parts for better uniqueness (8 characters total)
+    const part1 = Math.random().toString(36).substr(2, 4).toUpperCase();
+    const part2 = Math.random().toString(36).substr(2, 4).toUpperCase();
+    return 'WLVY-' + part1 + '-' + part2;
 }
 
 // Clean up expired codes
@@ -770,7 +773,7 @@ app.get('/device', (req, res) => {
                 <p>Go to <strong>wellavy.co</strong> and enter this code to connect Claude.</p>
             ` : `
                 <p>Enter the code shown in Claude Desktop:</p>
-                <input id="codeInput" placeholder="WLVY-1234" value="${userCode}" />
+                <input id="codeInput" placeholder="WLVY-XXXX-YYYY" value="${userCode}" />
                 <br>
                 <button onclick="authorize()">Authorize Device</button>
             `}
