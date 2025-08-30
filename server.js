@@ -1378,8 +1378,7 @@ app.get('/sse', async (req, res) => {
     
     // CRITICAL FIX: Send full URL as plain string, not relative path or JSON!
     // Claude Desktop expects the complete URL, not a relative path
-    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
-    const baseUrl = protocol + '://' + req.get('host');
+    const baseUrl = getBaseUrl(req);
     const endpointUrl = `${baseUrl}/messages?sessionId=${sessionId}`;
     
     // Send plain URL string in endpoint event (NOT JSON!)
@@ -1399,7 +1398,7 @@ app.get('/sse', async (req, res) => {
             sseSessions.delete(sessionId);
             try { res.end(); } catch {}
         }
-    }, 30000);
+    }, 15000);
     
     // Cleanup on close
     req.on('close', () => {
@@ -1486,9 +1485,8 @@ app.all('/mcp', async (req, res) => {
         // Store session
         sseSessions.set(sessionIdForSSE, res);
         
-        // Send endpoint URL
-        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
-        const baseUrl = protocol + '://' + req.get('host');
+        // Send endpoint URL using proper proxy-aware base URL
+        const baseUrl = getBaseUrl(req);
         const endpointUrl = `${baseUrl}/messages?sessionId=${sessionIdForSSE}`;
         
         res.write(`event: endpoint\n`);
@@ -1506,7 +1504,7 @@ app.all('/mcp', async (req, res) => {
                 clearInterval(keepAlive);
                 sseSessions.delete(sessionIdForSSE);
             }
-        }, 30000);
+        }, 15000);
         
         req.on('close', () => {
             clearInterval(keepAlive);
