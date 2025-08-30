@@ -1439,6 +1439,65 @@ app.all('/mcp', async (req, res) => {
         }
     }
     
+    // Handle GET request with SSE for second connection
+    if (req.method === 'GET' && req.headers.accept?.includes('text/event-stream')) {
+        console.log('📡 Setting up MCP SSE connection (GET)');
+        
+        // Create session ID
+        const sessionIdForSSE = crypto.randomBytes(16).toString('hex');
+        
+        // Set SSE headers
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+            'Access-Control-Allow-Origin': '*',
+            'Mcp-Session-Id': sessionIdForSSE
+        });
+        
+        // Store session
+        sseSessions.set(sessionIdForSSE, res);
+        
+        // Send endpoint URL
+        const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+        const baseUrl = protocol + '://' + req.get('host');
+        const endpointUrl = `${baseUrl}/messages?sessionId=${sessionIdForSSE}`;
+        
+        res.write(`event: endpoint\n`);
+        res.write(`data: ${endpointUrl}\n\n`);
+        console.log('📡 MCP SSE session established:', sessionIdForSSE);
+        
+        // Send tools notification
+        try {
+            const toolsNotif = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
+            res.write(`event: message\n`);
+            res.write(`data: ${JSON.stringify(toolsNotif)}\n\n`);
+            console.log('   📣 Sent tools/list_changed notification');
+        } catch (e) {
+            console.log('   ⚠️ Failed to send tools notification:', e);
+        }
+        
+        // Keep alive
+        const keepAlive = setInterval(() => {
+            try {
+                res.write(': ping\n\n');
+                res.flushHeaders();
+            } catch {
+                clearInterval(keepAlive);
+                sseSessions.delete(sessionIdForSSE);
+            }
+        }, 30000);
+        
+        req.on('close', () => {
+            clearInterval(keepAlive);
+            sseSessions.delete(sessionIdForSSE);
+            console.log('🔴 MCP SSE session closed:', sessionIdForSSE);
+        });
+        
+        return; // Don't continue to JSON-RPC handling
+    }
+    
     const hasSession = typeof sessionId === 'string' && sseSessions.has(sessionId);
     if (typeof sessionId === 'string' && !hasSession) {
         console.log('   ⚠️ Provided sessionId not found or closed:', sessionId);
