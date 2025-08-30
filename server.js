@@ -289,7 +289,7 @@ app.get('/health', (req, res) => {
 // 2. OAuth Discovery (tells Claude about OAuth capabilities)
 app.get('/.well-known/mcp_oauth', (req, res) => {
     // Force HTTPS for production URLs
-    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+    const protocol = (req.get('host').includes('railway.app') || req.get('host').includes('fly.dev')) ? 'https' : req.protocol;
     const baseUrl = protocol + '://' + req.get('host');
     console.log('🔍 MCP OAuth discovery requested from:', req.ip);
     
@@ -387,7 +387,7 @@ app.get('/oauth/authorize', (req, res) => {
     });
     
     // Force HTTPS for production URLs
-    const protocol = req.get('host').includes('railway.app') ? 'https' : req.protocol;
+    const protocol = (req.get('host').includes('railway.app') || req.get('host').includes('fly.dev')) ? 'https' : req.protocol;
     const baseUrl = protocol + '://' + req.get('host');
     
     console.log('🔐 New authorization request:');
