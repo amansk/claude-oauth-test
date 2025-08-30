@@ -8,11 +8,14 @@
     "dev": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.0",
     "cors": "^2.8.5",
+    "express": "^4.18.0",
     "node-fetch": "^2.6.0"
   },
   "engines": {
     "node": ">=16"
+  },
+  "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10"
   }
 }
