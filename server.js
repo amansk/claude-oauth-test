@@ -781,10 +781,29 @@ app.get('/device', (req, res) => {
             <div id="status"></div>
             
             <script>
-                function authorize() {
+                async function authorize() {
                     const code = document.getElementById('codeInput').value;
-                    // This would authorize the device code
-                    document.getElementById('status').innerHTML = 'Device authorized! Claude should connect now.';
+                    const statusDiv = document.getElementById('status');
+                    
+                    statusDiv.innerHTML = 'Authorizing...';
+                    
+                    try {
+                        const response = await fetch('/api/authorize-code', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ code })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            statusDiv.innerHTML = '<span style="color: green;">✅ Device authorized! Claude should connect now.</span>';
+                        } else {
+                            statusDiv.innerHTML = '<span style="color: red;">❌ Authorization failed: ' + (result.error || 'Unknown error') + '</span>';
+                        }
+                    } catch (error) {
+                        statusDiv.innerHTML = '<span style="color: red;">❌ Network error: ' + error.message + '</span>';
+                    }
                 }
             </script>
         </body>
