@@ -1364,12 +1364,12 @@ app.get('/sse', async (req, res) => {
 app.all('/mcp', async (req, res) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     const sessionId = req.query.sessionId;
-    console.log('📮 MCP JSON-RPC message to /mcp endpoint');
+    console.log('🔌 MCP endpoint request');
+    console.log('   Method:', req.method);
+    console.log('   Accept:', req.headers.accept);
     console.log('   sessionId:', sessionId || '(none)');
-    console.log('   Method:', req.body?.method);
+    console.log('   Body method:', req.body?.method);
     console.log('   Token:', token ? token.substring(0, 20) + '...' : 'None');
-    console.log('   Full request body:', JSON.stringify(req.body, null, 2));
-    console.log('   Headers:', JSON.stringify(req.headers, null, 2));
     
     // Check token
     if (!token) {
@@ -1390,12 +1390,39 @@ app.all('/mcp', async (req, res) => {
         });
     }
     
+    // Handle streaming HTTP connection setup (POST with mixed Accept headers)
+    const acceptsJson = req.headers.accept?.includes('application/json');
+    const acceptsStreaming = req.headers.accept?.includes('text/event-stream');
+    
+    if (req.method === 'POST' && acceptsJson && acceptsStreaming && req.body?.method === 'initialize') {
+        console.log('📡 Setting up MCP streaming HTTP connection (POST with mixed accept)');
+        
+        // Handle the initialize request first
+        try {
+            const response = await handleMcpMessage(req.body);
+            console.log('✅ Initialize response:', JSON.stringify(response, null, 2));
+            
+            // Return JSON response for initialize
+            return res.json(response);
+        } catch (error) {
+            console.error('❌ Initialize error:', error);
+            return res.status(500).json({
+                jsonrpc: '2.0',
+                error: { 
+                    code: -32603, 
+                    message: 'Internal error: ' + error.message 
+                },
+                id: req.body?.id || null
+            });
+        }
+    }
+    
     const hasSession = typeof sessionId === 'string' && sseSessions.has(sessionId);
     if (typeof sessionId === 'string' && !hasSession) {
         console.log('   ⚠️ Provided sessionId not found or closed:', sessionId);
     }
     
-    // Handle MCP JSON-RPC messages
+    // Handle regular MCP JSON-RPC messages
     if (req.body && req.body.jsonrpc === '2.0') {
         try {
             const response = await handleMcpMessage(req.body);
